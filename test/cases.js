@@ -486,3 +486,40 @@ suite('Real samples', () => {
     });
   }
 });
+
+// ── JSON ↔ text equivalence tests ─────────────────────────────────────────────
+// For each query pair (txt, json), assert that parsing both forms produces
+// identical summary, executionSummary, and operator count. This verifies that
+// the JSON unwrap and text parser are compatible.
+
+const PAIRS = [
+  ['../samples/tpch/count_lineitem.txt', '../samples/tpch/count_lineitem.json'],
+  ['../samples/tpch/tpch_q1.txt',        '../samples/tpch/tpch_q1.json'],
+  ['../samples/tpch/tpch_q3.txt',        '../samples/tpch/tpch_q3.json'],
+];
+
+function mapToObject(m) {
+  const o = {};
+  for (const [k, v] of m) o[k] = v;
+  return o;
+}
+
+suite('JSON ↔ text equivalence', () => {
+  for (const [txtPath, jsonPath] of PAIRS) {
+    test(`${txtPath} ≡ ${jsonPath} — summary keys match`, async () => {
+      const t = runPipeline(await (await fetch(txtPath)).text());
+      const j = runPipeline(await (await fetch(jsonPath)).text());
+      assertEqual(mapToObject(t.ast.summary), mapToObject(j.ast.summary));
+    });
+    test(`${txtPath} ≡ ${jsonPath} — executionSummary keys match`, async () => {
+      const t = runPipeline(await (await fetch(txtPath)).text());
+      const j = runPipeline(await (await fetch(jsonPath)).text());
+      assertEqual(mapToObject(t.ast.executionSummary), mapToObject(j.ast.executionSummary));
+    });
+    test(`${txtPath} ≡ ${jsonPath} — operator counts match`, async () => {
+      const t = runPipeline(await (await fetch(txtPath)).text());
+      const j = runPipeline(await (await fetch(jsonPath)).text());
+      assertEqual(countOperators(t.ast), countOperators(j.ast));
+    });
+  }
+});
