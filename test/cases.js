@@ -1,4 +1,4 @@
-import { suite, test, assertEqual, assertTrue } from './runner.js';
+import { suite, test, assertEqual, assertTrue, assertContains } from './runner.js';
 import { createAst, createOperator, createPipeline, createFragment } from '../js/parser/ast.js';
 
 suite('Runner smoke', () => {
@@ -46,5 +46,25 @@ suite('AST factories', () => {
     assertEqual(p.id, 0);
     assertEqual(p.instanceNum, 24);
     assertEqual(p.operators, null);
+  });
+});
+
+import { detect } from '../js/parser/detect.js';
+
+suite('detect', () => {
+  test('JSON object → "json"', () => {
+    assertEqual(detect('{"msg":"success","data":{"profile":"…"}}'), 'json');
+  });
+  test('Leading whitespace then { → "json"', () => {
+    assertEqual(detect('   \n  {"msg":"success"}'), 'json');
+  });
+  test('UTF-8 BOM then { → "json"', () => {
+    assertEqual(detect('﻿{"msg":"success"}'), 'json');
+  });
+  test('"Summary:" → "text"', () => {
+    assertEqual(detect('Summary:\n   - Profile ID: abc'), 'text');
+  });
+  test('Empty string → "text" (defensive)', () => {
+    assertEqual(detect(''), 'text');
   });
 });
