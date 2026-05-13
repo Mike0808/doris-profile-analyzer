@@ -1124,6 +1124,72 @@ suite('typeOlapScan', () => {
   });
 });
 
+// ── typeOlapScanInstance — per-host accessor (Task 12) ───────────────────────
+
+import { typeOlapScanInstance } from '../js/parser/operators/olapScan.js';
+
+function makePerHostScanNode() {
+  const node = {
+    name: 'OLAP_SCAN_OPERATOR',
+    rawHeader: 'OLAP_SCAN_OPERATOR (id=0. nereids_id=209. table name = lineitem(lineitem)):(ExecTime: 1.614ms)',
+    id: 0,
+    meta: new Map(),
+    attrs: new Map(),
+    startLine: 0, endLine: 0, children: [],
+  };
+  node.attrs.set('ExecTime', '1.614ms');
+  node.attrs.set('RowsRead', '251.384K (251384)');
+  node.attrs.set('RowsProduced', '251.384K (251384)');
+  node.attrs.set('BlocksProduced', '4');
+  node.attrs.set('NumScanners', '4');
+  node.attrs.set('TabletNum', '4');
+  node.attrs.set('MemoryUsagePeak', '192.00 KB');
+  node.attrs.set('ScannerWorkerWaitTime', '936.181us');
+  node.attrs.set('WaitForDependency[OLAP_SCAN_OPERATOR_DEPENDENCY]Time', '1.40ms');
+  node.attrs.set('WaitForRuntimeFilter', '0ns');
+  node.attrs.set('PushDownAggregate', 'COUNT');
+  node.attrs.set('PushDownPredicates', '[]');
+  node.attrs.set('RuntimeFilters', ': ');
+  node.attrs.set('VScanner.ReadColumns', '[l_shipdate]');
+  node.attrs.set('VScanner.PerScannerRunningTime', '[163.063us, 64.045us, 112.836us, 17.614us, ]');
+  node.attrs.set('VScanner.PerScannerRowsRead', '[63.01K, 63.03K, 62.98K, 62.36K, ]');
+  node.attrs.set('VScanner.PerScannerWaitTime', '[92.433us, 94.184us, 90.672us, 658.892us, ]');
+  node.attrs.set('VScanner.SegmentIterator.RowsBloomFilterFiltered', '0');
+  node.attrs.set('VScanner.SegmentIterator.RowsZoneMapRuntimePredicateFiltered', '5');
+  node.attrs.set('VScanner.SegmentIterator.RowsShortCircuitPredFiltered', '3');
+  return node;
+}
+
+suite('typeOlapScanInstance', () => {
+  test('scalar counters typed', () => {
+    const t = typeOlapScanInstance(makePerHostScanNode());
+    assertEqual(t.execTime_ns, 1614000);
+    assertEqual(t.rowsRead, 251384);
+    assertEqual(t.rowsProduced, 251384);
+    assertEqual(t.numScanners, 4);
+    assertEqual(t.tabletNum, 4);
+    assertEqual(t.memoryUsagePeak, 196608);
+  });
+  test('per-scanner arrays typed', () => {
+    const t = typeOlapScanInstance(makePerHostScanNode());
+    assertEqual(t.perScannerRunningTime_ns, [163063, 64045, 112836, 17614]);
+    assertEqual(t.perScannerRowsRead, [63010, 63030, 62980, 62360]);
+    assertEqual(t.perScannerWaitTime_ns, [92433, 94184, 90672, 658892]);
+  });
+  test('filter counters typed', () => {
+    const t = typeOlapScanInstance(makePerHostScanNode());
+    assertEqual(t.rowsBloomFilterFiltered, 0);
+    assertEqual(t.rowsZoneMapRuntimePredicateFiltered, 5);
+    assertEqual(t.rowsShortCircuitPredFiltered, 3);
+  });
+  test('null for missing counters', () => {
+    const node = makePerHostScanNode();
+    node.attrs.delete('VScanner.SegmentIterator.RowsBloomFilterFiltered');
+    const t = typeOlapScanInstance(node);
+    assertEqual(t.rowsBloomFilterFiltered, null);
+  });
+});
+
 // ── JSON ↔ text equivalence — perHost (Task 10) ───────────────────────────────
 // PAIRS is defined in the earlier 'JSON ↔ text equivalence' suite above.
 // countPerHostOperators is defined in the 'Real samples — perHost' suite above.
