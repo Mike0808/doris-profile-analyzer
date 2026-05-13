@@ -68,3 +68,35 @@ suite('detect', () => {
     assertEqual(detect(''), 'text');
   });
 });
+
+import { unwrapJson } from '../js/parser/jsonParser.js';
+
+suite('jsonParser.unwrapJson', () => {
+  test('Valid wrapper returns inner profile text', () => {
+    const payload = JSON.stringify({
+      msg: 'success',
+      code: 0,
+      data: { profile: 'Summary:\n   - Profile ID: abc\n' },
+    });
+    const r = unwrapJson(payload);
+    assertEqual(r.ok, true);
+    assertEqual(r.text, 'Summary:\n   - Profile ID: abc\n');
+  });
+  test('Escaped newlines and quotes are honored', () => {
+    const inner = 'Summary:\n   - Sql Statement: SELECT "a"\n';
+    const payload = JSON.stringify({ data: { profile: inner } });
+    const r = unwrapJson(payload);
+    assertEqual(r.ok, true);
+    assertEqual(r.text, inner);
+  });
+  test('Missing data.profile returns ok=false with reason', () => {
+    const r = unwrapJson('{"msg":"success","data":{}}');
+    assertEqual(r.ok, false);
+    assertContains(r.reason, 'data.profile');
+  });
+  test('Invalid JSON returns ok=false', () => {
+    const r = unwrapJson('{not json');
+    assertEqual(r.ok, false);
+    assertContains(r.reason, 'JSON');
+  });
+});
