@@ -1,0 +1,14 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Local serve artifacts
+__pycache__/
+
+# Logs (none expected, but defensive)
+*.log
