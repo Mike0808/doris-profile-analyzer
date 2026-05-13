@@ -1,11 +1,46 @@
 import { runPipeline } from './parser/textParser.js';
+import { el, clear } from './util/dom.js';
 
 const openBtn   = document.getElementById('open-btn');
 const fileInput = document.getElementById('file-input');
 const overlay   = document.getElementById('drop-overlay');
 const fileMeta  = document.getElementById('file-meta');
 
+const tabsNav   = document.getElementById('tabs');
+const content   = document.getElementById('content');
+
 let currentProfile = null;   // { fileName, sizeBytes, result }
+
+const tabs = [];          // [{ name, renderer, button }]
+let activeTab = null;
+
+export function registerTab(name, renderer) {
+  const button = el('button', { class: 'tab' }, name);
+  button.addEventListener('click', () => activateTab(name));
+  tabsNav.appendChild(button);
+  tabs.push({ name, renderer, button });
+  if (activeTab === null) activateTab(name);
+}
+
+function activateTab(name) {
+  activeTab = name;
+  for (const t of tabs) {
+    t.button.classList.toggle('active', t.name === name);
+  }
+  renderActive();
+}
+
+function renderActive() {
+  clear(content);
+  if (!activeTab) return;
+  const t = tabs.find(x => x.name === activeTab);
+  if (!t) return;
+  if (!currentProfile || !currentProfile.result.ok) {
+    content.appendChild(el('div', { class: 'empty-state' }, 'Open a Doris profile to begin'));
+    return;
+  }
+  t.renderer(content, currentProfile.result.ast);
+}
 
 openBtn.addEventListener('click', () => fileInput.click());
 fileInput.addEventListener('change', () => {
@@ -32,6 +67,11 @@ async function loadFile(file) {
   const result = runPipeline(text);
   currentProfile = { fileName: file.name, sizeBytes: file.size, result };
   fileMeta.textContent = `${file.name} (${file.size} bytes) — format=${result.ok ? result.ast.format : 'error'}`;
-  // Rendering wired up in Task 15.
   window.__profile = currentProfile;   // exposed for quick manual inspection
+  renderActive();
 }
+
+// Register a placeholder Raw tab (real renderer wired up in Task 16).
+registerTab('Raw', (container) => {
+  container.appendChild(el('div', { class: 'empty-state' }, '(Raw renderer placeholder)'));
+});
