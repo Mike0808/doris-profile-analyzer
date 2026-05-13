@@ -2,6 +2,8 @@
 // See docs/superpowers/specs/2026-05-12-iteration-1-parser-raw-design.md §5
 
 import { createAst, createFragment, createPipeline, createOperator } from './ast.js';
+import { detect } from './detect.js';
+import { unwrapJson } from './jsonParser.js';
 
 const RE_SECTION  = /^(Summary|Execution Summary|MergedProfile|Changed Session Variables|Physical Plan)\s*:?\s*$/;
 const RE_COUNTER  = /^(\s*)-\s+([^:]+?)\s*:\s*(.*)$/;
@@ -197,4 +199,18 @@ export function textParser(input) {
 
   flushOpaque();
   return ast;
+}
+
+export function runPipeline(input) {
+  const format = detect(input);
+  let text = input;
+  if (format === 'json') {
+    const u = unwrapJson(input);
+    if (!u.ok) return { ok: false, ast: null, error: u.reason };
+    text = u.text;
+  }
+  const ast = textParser(text);
+  ast.format = format;
+  ast.sourceText = text;
+  return { ok: true, ast, error: null };
 }

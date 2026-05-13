@@ -326,3 +326,29 @@ suite('textParser — opaqueBlocks', () => {
     assertEqual(root.attrs.get('ExecTime'), 'avg 1us, max 1us, min 1us');
   });
 });
+
+import { runPipeline } from '../js/parser/textParser.js';
+
+suite('runPipeline', () => {
+  test('Plain text input yields format=text', () => {
+    const r = runPipeline('Summary:\n   - Profile ID: abc\n');
+    assertEqual(r.ok, true);
+    assertEqual(r.ast.format, 'text');
+    assertEqual(r.ast.summary.get('Profile ID'), 'abc');
+    assertEqual(r.ast.sourceText, 'Summary:\n   - Profile ID: abc\n');
+  });
+  test('JSON wrapper unwrapped, format=json', () => {
+    const inner = 'Summary:\n   - Profile ID: xyz\n';
+    const wrapped = JSON.stringify({ data: { profile: inner } });
+    const r = runPipeline(wrapped);
+    assertEqual(r.ok, true);
+    assertEqual(r.ast.format, 'json');
+    assertEqual(r.ast.summary.get('Profile ID'), 'xyz');
+    assertEqual(r.ast.sourceText, inner);
+  });
+  test('Malformed JSON returns ok=false with error message', () => {
+    const r = runPipeline('{not json');
+    assertEqual(r.ok, false);
+    assertContains(r.error, 'JSON');
+  });
+});
