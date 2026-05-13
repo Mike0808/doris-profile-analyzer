@@ -28,12 +28,11 @@ suite('AST factories', () => {
       rawHeader: 'EXCHANGE_OPERATOR (id=5):',
       id: 5,
       startLine: 12,
-      endLine: 30,
     });
     assertEqual(op.name, 'EXCHANGE_OPERATOR');
     assertEqual(op.id, 5);
     assertEqual(op.startLine, 12);
-    assertEqual(op.endLine, 30);
+    assertEqual(op.endLine, 12);
     assertTrue(op.meta instanceof Map);
     assertTrue(op.attrs instanceof Map);
     assertEqual(op.children, []);
