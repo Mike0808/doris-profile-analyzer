@@ -193,3 +193,37 @@ suite('textParser — MergedProfile skeleton', () => {
     }
   });
 });
+
+const OP_TREE_FIXTURE = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           RESULT_SINK_OPERATOR (id=0):
+             EXCHANGE_OPERATOR (id=5):
+               OLAP_SCAN_OPERATOR (id=0. nereids_id=273. table name = lineitem(lineitem)):
+`;
+
+suite('textParser — operator stack', () => {
+  test('Operator tree has chain shape', () => {
+    const ast = textParser(OP_TREE_FIXTURE);
+    const root = ast.mergedProfile.fragments[0].pipelines[0].operators;
+    assertTrue(root !== null);
+    assertEqual(root.name, 'RESULT_SINK_OPERATOR');
+    assertEqual(root.id, 0);
+    assertEqual(root.children.length, 1);
+    const child = root.children[0];
+    assertEqual(child.name, 'EXCHANGE_OPERATOR');
+    assertEqual(child.id, 5);
+    assertEqual(child.children.length, 1);
+    const leaf = child.children[0];
+    assertEqual(leaf.name, 'OLAP_SCAN_OPERATOR');
+    assertEqual(leaf.id, 0);
+  });
+  test('Operator rawHeader is preserved verbatim', () => {
+    const ast = textParser(OP_TREE_FIXTURE);
+    const leaf = ast.mergedProfile.fragments[0].pipelines[0].operators.children[0].children[0];
+    assertEqual(leaf.rawHeader, 'OLAP_SCAN_OPERATOR (id=0. nereids_id=273. table name = lineitem(lineitem)):');
+  });
+});

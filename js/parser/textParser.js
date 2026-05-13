@@ -1,7 +1,7 @@
 // textParser: indent-aware state machine over classified lines.
 // See docs/superpowers/specs/2026-05-12-iteration-1-parser-raw-design.md §5
 
-import { createAst, createFragment, createPipeline } from './ast.js';
+import { createAst, createFragment, createPipeline, createOperator } from './ast.js';
 
 const RE_SECTION  = /^(Summary|Execution Summary|MergedProfile|Changed Session Variables|Physical Plan)\s*:?\s*$/;
 const RE_COUNTER  = /^(\s*)-\s+([^:]+?)\s*:\s*(.*)$/;
@@ -9,16 +9,18 @@ const RE_COUNTER_NOVAL = /^(\s*)-\s+([^:]+?)\s*$/;       // '- PlanInfo' (no val
 
 const RE_FRAGMENT        = /^\s+Fragment\s+(\d+)\s*:\s*$/;
 const RE_PIPELINE_MERGED = /^\s+Pipeline\s*:\s*(\d+)\s*\(instance_num=(\d+)\)\s*:\s*$/;
+const RE_OPERATOR        = /^(\s*)([A-Z_]+_OPERATOR)\b.*?\(id=(-?\d+)[^\n]*\)\s*:\s*$/;
 
 export function textParser(input) {
   const ast = createAst();
   ast.sourceText = input;
   const lines = input.split(/\r?\n/);
 
-  let section = null;               // 'summary' | 'executionSummary' | null
+  let section = null;               // 'summary' | 'executionSummary' | 'mergedProfile' | null
   // Stack of {indent, name} for currently-open counters. Used to build dotted paths.
   let counterStack = [];
   let lastCounterEntry = null;      // {key, mapRef} — used for multi-line continuation
+  let opStack = [];                 // [{indent, node, counterStack?}] for current pipeline
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -90,8 +92,41 @@ export function textParser(input) {
             })
           );
         }
+        opStack = [];
         continue;
       }
+
+      const om = RE_OPERATOR.exec(line);
+      if (om) {
+        const indent = om[1].length;
+        const op = createOperator({
+          name: om[2],
+          rawHeader: line.trim(),
+          id: parseInt(om[3], 10),
+          startLine: i,
+        });
+        // Pop stack until top has indent < current.
+        while (opStack.length && opStack[opStack.length - 1].indent >= indent) {
+          opStack.pop();
+        }
+        if (opStack.length === 0) {
+          const currentFragment = ast.mergedProfile.fragments[ast.mergedProfile.fragments.length - 1];
+          const currentPipeline = currentFragment.pipelines[currentFragment.pipelines.length - 1];
+          if (currentPipeline.operators === null) {
+            currentPipeline.operators = op;
+          } else {
+            ast.warnings.push({
+              line: i,
+              message: `Pipeline ${currentPipeline.id} already has a root operator; ignoring ${op.name}`,
+            });
+          }
+        } else {
+          opStack[opStack.length - 1].node.children.push(op);
+        }
+        opStack.push({ indent, node: op });
+        continue;
+      }
+
       // Other MergedProfile content handled in later tasks.
     }
 
