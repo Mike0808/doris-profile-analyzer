@@ -1,5 +1,5 @@
 import { suite, test, assertEqual, assertTrue, assertContains } from './runner.js';
-import { createAst, createOperator, createPipeline, createFragment } from '../js/parser/ast.js';
+import { createAst, createOperator, createPipeline, createFragment, createPerHostFragment, createPerHostPipeline, createPipelineTask, createFragmentLevel } from '../js/parser/ast.js';
 import {
   parseDuration, parseBytes, parseRowCount,
   parseAvgMaxMin, parseSumAvgMaxMin, parseSumAvgMaxMinRows,
@@ -24,6 +24,7 @@ suite('AST factories', () => {
     assertTrue(ast.summary instanceof Map);
     assertTrue(ast.executionSummary instanceof Map);
     assertEqual(ast.mergedProfile.fragments, []);
+    assertEqual(ast.perHost.fragments, []);
     assertEqual(ast.opaqueBlocks, []);
     assertEqual(ast.warnings, []);
   });
@@ -688,5 +689,38 @@ suite('util/format — formatters', () => {
   });
   test('formatPct: null → "—"', () => {
     assertEqual(formatPct(null), '—');
+  });
+});
+
+// ── AST factories — perHost ───────────────────────────────────────────────────
+
+suite('AST factories — perHost', () => {
+  test('createPerHostFragment defaults', () => {
+    const f = createPerHostFragment({ id: 0, startLine: 100 });
+    assertEqual(f.id, 0);
+    assertEqual(f.startLine, 100);
+    assertEqual(f.endLine, 100);
+    assertEqual(f.pipelines, []);
+    assertEqual(f.fragmentLevel, null);
+  });
+  test('createFragmentLevel defaults', () => {
+    const fl = createFragmentLevel({ host: '10.0.0.1:9050', execTime: '6.954ms', startLine: 101 });
+    assertEqual(fl.host, '10.0.0.1:9050');
+    assertEqual(fl.execTime, '6.954ms');
+    assertTrue(fl.attrs instanceof Map);
+    assertEqual(fl.startLine, 101);
+  });
+  test('createPerHostPipeline defaults', () => {
+    const p = createPerHostPipeline({ id: 0, host: '10.0.0.1:9050', startLine: 110 });
+    assertEqual(p.id, 0);
+    assertEqual(p.host, '10.0.0.1:9050');
+    assertEqual(p.tasks, []);
+  });
+  test('createPipelineTask defaults', () => {
+    const t = createPipelineTask({ index: 0, execTime: '679.83us', startLine: 120 });
+    assertEqual(t.index, 0);
+    assertEqual(t.execTime, '679.83us');
+    assertTrue(t.attrs instanceof Map);
+    assertEqual(t.operators, null);
   });
 });

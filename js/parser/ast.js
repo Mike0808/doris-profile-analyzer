@@ -8,6 +8,7 @@ export function createAst() {
     summary: new Map(),
     executionSummary: new Map(),
     mergedProfile: { fragments: [] },
+    perHost: { fragments: [] },
     opaqueBlocks: [],
     warnings: [],
   };
@@ -32,4 +33,20 @@ export function createOperator({ name, rawHeader, id, startLine }) {
     endLine: startLine,
     children: [],
   };
+}
+
+export function createPerHostFragment({ id, startLine }) {
+  return { id, startLine, endLine: startLine, fragmentLevel: null, pipelines: [] };
+}
+
+export function createFragmentLevel({ host, execTime, startLine }) {
+  return { host, execTime, attrs: new Map(), startLine, endLine: startLine };
+}
+
+export function createPerHostPipeline({ id, host, startLine }) {
+  return { id, host, startLine, endLine: startLine, tasks: [] };
+}
+
+export function createPipelineTask({ index, execTime, startLine }) {
+  return { index, execTime, attrs: new Map(), operators: null, startLine, endLine: startLine };
 }
