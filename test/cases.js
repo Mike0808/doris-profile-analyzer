@@ -4,6 +4,7 @@ import {
   parseDuration, parseBytes, parseRowCount,
   parseAvgMaxMin, parseSumAvgMaxMin, parseSumAvgMaxMinRows,
   parseScalarTime, parseArray,
+  formatNs, formatBytes, formatRows, formatPct,
 } from '../js/util/format.js';
 
 suite('Runner smoke', () => {
@@ -643,5 +644,49 @@ suite('util/format — parsers', () => {
       parseArray('[63.01K, 63.03K, 62.98K, 62.36K, ]', parseRowCount),
       [63010, 63030, 62980, 62360]
     );
+  });
+});
+
+// ── util/format — formatters ──────────────────────────────────────────────────
+
+suite('util/format — formatters', () => {
+  test('formatNs: ns/us/ms/s ranges', () => {
+    assertEqual(formatNs(0), '0ns');
+    assertEqual(formatNs(915), '915ns');
+    assertEqual(formatNs(87130), '87.1us');
+    assertEqual(formatNs(1578000), '1.58ms');
+    assertEqual(formatNs(2_500_000_000), '2.5s');
+    assertEqual(formatNs(60_000_000_000), '60.0s');
+  });
+  test('formatNs: null/undefined → "—"', () => {
+    assertEqual(formatNs(null), '—');
+    assertEqual(formatNs(undefined), '—');
+  });
+  test('formatBytes: B/KB/MB/GB', () => {
+    assertEqual(formatBytes(0), '0 B');
+    assertEqual(formatBytes(64), '64 B');
+    assertEqual(formatBytes(196608), '192.0 KB');
+    assertEqual(formatBytes(4980736), '4.75 MB');
+  });
+  test('formatBytes: null → "—"', () => {
+    assertEqual(formatBytes(null), '—');
+  });
+  // Note: 250050/1000 = 250.05 → toFixed(1) = '250.1K' (math rounding)
+  test('formatRows: K/M', () => {
+    assertEqual(formatRows(0), '0');
+    assertEqual(formatRows(999), '999');
+    assertEqual(formatRows(250050), '250.1K');
+    assertEqual(formatRows(6001215), '6.0M');
+  });
+  test('formatRows: null → "—"', () => {
+    assertEqual(formatRows(null), '—');
+  });
+  test('formatPct: one decimal', () => {
+    assertEqual(formatPct(0), '0.0%');
+    assertEqual(formatPct(92.345), '92.3%');
+    assertEqual(formatPct(100), '100.0%');
+  });
+  test('formatPct: null → "—"', () => {
+    assertEqual(formatPct(null), '—');
   });
 });

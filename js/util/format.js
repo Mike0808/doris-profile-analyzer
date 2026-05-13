@@ -97,3 +97,34 @@ export function parseArray(s, elem = parseDuration) {
   }
   return out;
 }
+
+// ── Formatters ────────────────────────────────────────────────────────────────
+
+export function formatNs(ns) {
+  if (ns === null || ns === undefined || Number.isNaN(ns)) return '—';
+  if (ns < 1000)                    return `${ns}ns`;
+  if (ns < 1_000_000)               return `${(ns / 1000).toFixed(1)}us`;
+  if (ns < 1_000_000_000)           return `${(ns / 1_000_000).toFixed(2)}ms`;
+  return `${(ns / 1_000_000_000).toFixed(1)}s`;
+}
+
+export function formatBytes(b) {
+  if (b === null || b === undefined || Number.isNaN(b)) return '—';
+  if (b < 1024)               return `${b} B`;
+  if (b < 1024 * 1024)        return `${(b / 1024).toFixed(1)} KB`;
+  if (b < 1024 * 1024 * 1024) return `${(b / (1024 * 1024)).toFixed(2)} MB`;
+  return `${(b / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+export function formatRows(n) {
+  if (n === null || n === undefined || Number.isNaN(n)) return '—';
+  if (n < 1000)              return `${n}`;
+  if (n < 1_000_000)         return `${(n / 1000).toFixed(1)}K`;
+  if (n < 1_000_000_000)     return `${(n / 1_000_000).toFixed(1)}M`;
+  return `${(n / 1_000_000_000).toFixed(1)}B`;
+}
+
+export function formatPct(p) {
+  if (p === null || p === undefined || Number.isNaN(p)) return '—';
+  return `${p.toFixed(1)}%`;
+}
