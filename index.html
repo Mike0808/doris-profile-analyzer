@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Doris Profile Analyzer</title>
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div id="app">
+    <header class="app-header">
+      <h1>Doris Profile Analyzer</h1>
+      <button id="open-btn">Open profile…</button>
+      <input id="file-input" type="file" hidden>
+      <div id="file-meta"></div>
+    </header>
+    <nav class="tabs" id="tabs"></nav>
+    <main id="content">
+      <div class="empty-state">Drop a Doris profile here, or click "Open profile…"</div>
+    </main>
+    <div class="drop-overlay" id="drop-overlay">Drop profile here</div>
+  </div>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
