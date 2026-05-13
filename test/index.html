@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>doris-profile-analyzer — tests</title>
+  <style>
+    body { font-family: monospace; background: #2e3440; color: #d8dee9; padding: 1em; }
+    h2 { margin-top: 1.5em; color: #88c0d0; }
+    table.results { border-collapse: collapse; width: 100%; }
+    table.results td { padding: 4px 8px; border-bottom: 1px solid #434c5e; vertical-align: top; }
+    table.results td:first-child { width: 40%; }
+    .pass { color: #a3be8c; }
+    .fail { color: #bf616a; }
+    .summary { font-size: 1.2em; padding: 0.5em; margin-bottom: 1em; }
+    pre { margin: 0; white-space: pre-wrap; color: #bf616a; }
+  </style>
+</head>
+<body>
+  <div id="results"></div>
+  <script type="module">
+    import { run } from './runner.js';
+    import './cases.js';
+    run(document.getElementById('results'));
+  </script>
+</body>
+</html>
