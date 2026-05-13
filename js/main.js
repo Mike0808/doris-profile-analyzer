@@ -36,11 +36,22 @@ function renderActive() {
   if (!activeTab) return;
   const t = tabs.find(x => x.name === activeTab);
   if (!t) return;
-  if (!currentProfile || !currentProfile.result.ok) {
+  if (!currentProfile) {
     content.appendChild(el('div', { class: 'empty-state' }, 'Open a Doris profile to begin'));
     return;
   }
-  t.renderer(content, currentProfile.result.ast);
+  if (!currentProfile.result.ok) {
+    // Render the raw input directly so the user can see what arrived.
+    const fakeAst = { sourceText: currentProfile.rawInput, warnings: [] };
+    content.appendChild(el('div', { class: 'banner' }, 'Could not parse: ' + currentProfile.result.error + ' — showing raw input'));
+    t.renderer(content, fakeAst);
+    return;
+  }
+  const ast = currentProfile.result.ast;
+  if (ast.mergedProfile.fragments.length === 0 && ast.summary.size === 0) {
+    content.appendChild(el('div', { class: 'banner' }, "Doesn't look like a Doris profile — showing raw text"));
+  }
+  t.renderer(content, ast);
 }
 
 openBtn.addEventListener('click', () => fileInput.click());
@@ -64,9 +75,18 @@ window.addEventListener('drop', (e) => {
 });
 
 async function loadFile(file) {
-  const text = await file.text();
+  let text;
+  try {
+    text = await file.text();
+  } catch (e) {
+    toast('Failed to read file: ' + (e.message || e));
+    return;
+  }
   const result = runPipeline(text);
-  currentProfile = { fileName: file.name, sizeBytes: file.size, result };
+  currentProfile = { fileName: file.name, sizeBytes: file.size, result, rawInput: text };
+  if (!result.ok) {
+    toast(result.error);
+  }
   renderHeader();
   renderActive();
   window.__profile = currentProfile;
@@ -105,6 +125,12 @@ function formatBytes(n) {
   if (n < 1024) return `${n} B`;
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function toast(msg, ms = 4000) {
+  const t = el('div', { class: 'toast' }, msg);
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), ms);
 }
 
 // Warnings panel.

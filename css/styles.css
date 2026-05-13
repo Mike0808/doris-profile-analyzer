@@ -173,3 +173,21 @@ nav.tabs button.tab.active {
 .warnings-panel.visible { display: block; }
 .warnings-panel .w-row { padding: 2px 0; }
 .warnings-panel .w-line { color: var(--nord13); margin-right: 1em; }
+
+.toast {
+  position: fixed;
+  bottom: 1em;
+  right: 1em;
+  background: var(--nord11);
+  color: var(--nord6);
+  padding: 0.5em 1em;
+  border-radius: 2px;
+  z-index: 200;
+  max-width: 30em;
+}
+.banner {
+  background: var(--nord13);
+  color: var(--nord0);
+  padding: 0.5em 1em;
+  border-bottom: 1px solid var(--nord3);
+}
