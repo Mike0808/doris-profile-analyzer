@@ -191,3 +191,34 @@ nav.tabs button.tab.active {
   padding: 0.5em 1em;
   border-bottom: 1px solid var(--nord3);
 }
+
+.scan-summary { padding: 1em; }
+.scan-summary .empty-state { padding: 2em; color: var(--nord3); text-align: center; }
+.scan-summary-table {
+  display: grid;
+  grid-template-columns:
+    minmax(8em, 1fr)
+    minmax(7em, auto)
+    minmax(6em, auto)
+    minmax(6em, auto)
+    minmax(6em, auto)
+    minmax(5em, auto)
+    minmax(9em, auto)
+    minmax(5em, auto)
+    minmax(7em, auto);
+  gap: 0;
+  font-size: 12px;
+}
+.scan-summary-table .header,
+.scan-summary-table .cell {
+  padding: 0.4em 0.6em;
+  border-bottom: 1px solid var(--nord3);
+}
+.scan-summary-table .header {
+  font-weight: bold;
+  color: var(--nord8);
+  background: var(--nord1);
+  user-select: none;
+}
+.scan-summary-table .cell { background: var(--nord0); }
+.scan-summary-table .cell.numeric { text-align: right; font-variant-numeric: tabular-nums; }

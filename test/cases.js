@@ -1252,3 +1252,14 @@ suite('JSON ↔ text equivalence — perHost', () => {
     });
   }
 });
+
+import { renderScanSummary } from '../js/render/scanSummary.js';
+
+suite('renderScanSummary — smoke', () => {
+  test('Empty AST renders empty state', () => {
+    const container = document.createElement('div');
+    const fakeAst = { mergedProfile: { fragments: [] }, perHost: { fragments: [] } };
+    renderScanSummary(container, fakeAst);
+    assertContains(container.innerHTML, 'No OLAP scan operators');
+  });
+});
