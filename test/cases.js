@@ -846,3 +846,106 @@ suite('textParser — perHost operators', () => {
     assertEqual(leaf.name, 'OLAP_SCAN_OPERATOR');
   });
 });
+
+// ── textParser — perHost counter routing (Task 6) ─────────────────────────────
+
+const PERHOST_COUNTERS_FIXTURE = `Summary:
+   - Profile ID: x
+Execution Profile abc-123:
+  Fragments:
+    Fragment 0:
+      Fragment Level Profile:  (host=TNetworkAddress(hostname:10.0.0.1, port:9050)):(ExecTime: 6.954ms)
+         - BuildPipelinesTime: 34.585us
+         - BuildTasksTime: 235.213us
+      Pipeline :0  (host=TNetworkAddress(hostname:10.0.0.1, port:9050)):
+        PipelineTask (index=0):(ExecTime: 679.83us)
+           - TaskState: Finished
+           - ExecuteTime: 403.353us
+             - CloseTime: 16.919us
+             - GetBlockTime: 7.906us
+           - NumScheduleTimes: 3
+          RESULT_SINK_OPERATOR (id=0):(ExecTime: 114.905us)
+             - AppendBatchTime: 24.193us
+               - CopyBufferTime: 0ns
+             - BytesSent: 8.00 B
+`;
+
+suite('textParser — perHost counter routing', () => {
+  test('FragmentLevel counters land in fragmentLevel.attrs', () => {
+    const ast = textParser(PERHOST_COUNTERS_FIXTURE);
+    const fl = ast.perHost.fragments[0].fragmentLevel;
+    assertEqual(fl.attrs.get('BuildPipelinesTime'), '34.585us');
+    assertEqual(fl.attrs.get('BuildTasksTime'), '235.213us');
+  });
+  test('PipelineTask counters land in task.attrs with dotted-path nesting', () => {
+    const ast = textParser(PERHOST_COUNTERS_FIXTURE);
+    const task = ast.perHost.fragments[0].pipelines[0].tasks[0];
+    assertEqual(task.attrs.get('TaskState'), 'Finished');
+    assertEqual(task.attrs.get('ExecuteTime'), '403.353us');
+    assertEqual(task.attrs.get('ExecuteTime.CloseTime'), '16.919us');
+    assertEqual(task.attrs.get('ExecuteTime.GetBlockTime'), '7.906us');
+    assertEqual(task.attrs.get('NumScheduleTimes'), '3');
+  });
+  test('Operator counters land in op.attrs with dotted-path nesting', () => {
+    const ast = textParser(PERHOST_COUNTERS_FIXTURE);
+    const op = ast.perHost.fragments[0].pipelines[0].tasks[0].operators;
+    assertEqual(op.attrs.get('AppendBatchTime'), '24.193us');
+    assertEqual(op.attrs.get('AppendBatchTime.CopyBufferTime'), '0ns');
+    assertEqual(op.attrs.get('BytesSent'), '8.00 B');
+  });
+  test('Operator counters do not leak into task.attrs', () => {
+    const ast = textParser(PERHOST_COUNTERS_FIXTURE);
+    const task = ast.perHost.fragments[0].pipelines[0].tasks[0];
+    assertTrue(!task.attrs.has('AppendBatchTime'));
+    assertTrue(!task.attrs.has('BytesSent'));
+  });
+});
+
+// ── textParser — perHost named blocks (Task 7) ────────────────────────────────
+
+const PERHOST_NAMED_BLOCK_FIXTURE = `Summary:
+   - Profile ID: x
+Execution Profile abc-123:
+  Fragments:
+    Fragment 0:
+      Pipeline :0  (host=TNetworkAddress(hostname:10.0.0.1, port:9050)):
+        PipelineTask (index=0):(ExecTime: 1ms)
+          OLAP_SCAN_OPERATOR (id=0):(ExecTime: 1.614ms)
+             - RuntimeFilters: :
+             - PushDownAggregate: COUNT
+            VScanner:
+               - ReadColumns: [l_shipdate]
+               - PerScannerRunningTime: [163.063us, 64.045us, 112.836us, 17.614us, ]
+              SegmentIterator:
+                 - RowsBloomFilterFiltered: 0
+                 - RowsZoneMapRuntimePredicateFiltered: 5
+              IndexFilter:
+`;
+
+suite('textParser — perHost named blocks', () => {
+  test('Counter outside any named block has flat key', () => {
+    const ast = textParser(PERHOST_NAMED_BLOCK_FIXTURE);
+    const op = ast.perHost.fragments[0].pipelines[0].tasks[0].operators;
+    // RuntimeFilters value depends on whether the source preserved trailing whitespace.
+    // Both ':' and ': ' are valid — assert it starts with ':'.
+    assertContains(op.attrs.get('RuntimeFilters') ?? '', ':');
+    assertEqual(op.attrs.get('PushDownAggregate'), 'COUNT');
+  });
+  test('Counter inside VScanner has VScanner.* prefix', () => {
+    const ast = textParser(PERHOST_NAMED_BLOCK_FIXTURE);
+    const op = ast.perHost.fragments[0].pipelines[0].tasks[0].operators;
+    assertEqual(op.attrs.get('VScanner.ReadColumns'), '[l_shipdate]');
+    assertEqual(op.attrs.get('VScanner.PerScannerRunningTime'), '[163.063us, 64.045us, 112.836us, 17.614us, ]');
+  });
+  test('Counter inside VScanner.SegmentIterator has nested prefix', () => {
+    const ast = textParser(PERHOST_NAMED_BLOCK_FIXTURE);
+    const op = ast.perHost.fragments[0].pipelines[0].tasks[0].operators;
+    assertEqual(op.attrs.get('VScanner.SegmentIterator.RowsBloomFilterFiltered'), '0');
+    assertEqual(op.attrs.get('VScanner.SegmentIterator.RowsZoneMapRuntimePredicateFiltered'), '5');
+  });
+  test('IndexFilter as bare block is accepted (empty body)', () => {
+    const ast = textParser(PERHOST_NAMED_BLOCK_FIXTURE);
+    const op = ast.perHost.fragments[0].pipelines[0].tasks[0].operators;
+    assertTrue(op !== null);
+  });
+});
