@@ -154,3 +154,42 @@ suite('textParser — Summary + Execution Summary', () => {
     assertEqual(ast.executionSummary.size, 0);
   });
 });
+
+const MERGED_SKELETON_FIXTURE = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+       Fragment 1:
+         Pipeline : 0(instance_num=24):
+         Pipeline : 1(instance_num=24):
+`;
+
+suite('textParser — MergedProfile skeleton', () => {
+  test('Two fragments parsed', () => {
+    const ast = textParser(MERGED_SKELETON_FIXTURE);
+    assertEqual(ast.mergedProfile.fragments.length, 2);
+    assertEqual(ast.mergedProfile.fragments[0].id, 0);
+    assertEqual(ast.mergedProfile.fragments[1].id, 1);
+  });
+  test('Pipelines parsed with instance_num', () => {
+    const ast = textParser(MERGED_SKELETON_FIXTURE);
+    const f0 = ast.mergedProfile.fragments[0];
+    const f1 = ast.mergedProfile.fragments[1];
+    assertEqual(f0.pipelines.length, 1);
+    assertEqual(f0.pipelines[0].id, 0);
+    assertEqual(f0.pipelines[0].instanceNum, 1);
+    assertEqual(f1.pipelines.length, 2);
+    assertEqual(f1.pipelines[1].id, 1);
+    assertEqual(f1.pipelines[1].instanceNum, 24);
+  });
+  test('All pipelines have operators=null at this stage', () => {
+    const ast = textParser(MERGED_SKELETON_FIXTURE);
+    for (const f of ast.mergedProfile.fragments) {
+      for (const p of f.pipelines) {
+        assertEqual(p.operators, null);
+      }
+    }
+  });
+});

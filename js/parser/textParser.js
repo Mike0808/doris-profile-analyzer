@@ -1,11 +1,14 @@
 // textParser: indent-aware state machine over classified lines.
 // See docs/superpowers/specs/2026-05-12-iteration-1-parser-raw-design.md §5
 
-import { createAst } from './ast.js';
+import { createAst, createFragment, createPipeline } from './ast.js';
 
 const RE_SECTION  = /^(Summary|Execution Summary|MergedProfile|Changed Session Variables|Physical Plan)\s*:?\s*$/;
 const RE_COUNTER  = /^(\s*)-\s+([^:]+?)\s*:\s*(.*)$/;
 const RE_COUNTER_NOVAL = /^(\s*)-\s+([^:]+?)\s*$/;       // '- PlanInfo' (no value)
+
+const RE_FRAGMENT        = /^\s+Fragment\s+(\d+)\s*:\s*$/;
+const RE_PIPELINE_MERGED = /^\s+Pipeline\s*:\s*(\d+)\s*\(instance_num=(\d+)\)\s*:\s*$/;
 
 export function textParser(input) {
   const ast = createAst();
@@ -23,8 +26,9 @@ export function textParser(input) {
     const secMatch = RE_SECTION.exec(line);
     if (secMatch) {
       const name = secMatch[1];
-      if (name === 'Summary')                section = 'summary';
+      if      (name === 'Summary')           section = 'summary';
       else if (name === 'Execution Summary') section = 'executionSummary';
+      else if (name === 'MergedProfile')     section = 'mergedProfile';
       else                                    section = null;
       counterStack = [];
       lastCounterEntry = null;
@@ -66,8 +70,33 @@ export function textParser(input) {
       if (line.trim() === '') continue;
     }
 
-    // Outside Summary/Execution Summary, or unrecognised: ignore for now.
-    // Later tasks (6–10) handle the rest.
+    if (section === 'mergedProfile') {
+      const fm = RE_FRAGMENT.exec(line);
+      if (fm) {
+        ast.mergedProfile.fragments.push(
+          createFragment({ id: parseInt(fm[1], 10), startLine: i })
+        );
+        continue;
+      }
+      const pm = RE_PIPELINE_MERGED.exec(line);
+      if (pm) {
+        const currentFragment = ast.mergedProfile.fragments[ast.mergedProfile.fragments.length - 1];
+        if (currentFragment) {
+          currentFragment.pipelines.push(
+            createPipeline({
+              id: parseInt(pm[1], 10),
+              instanceNum: parseInt(pm[2], 10),
+              startLine: i,
+            })
+          );
+        }
+        continue;
+      }
+      // Other MergedProfile content handled in later tasks.
+    }
+
+    // Outside Summary/Execution Summary/MergedProfile, or unrecognised: ignore for now.
+    // Later tasks (9–10) handle the rest.
   }
 
   return ast;
