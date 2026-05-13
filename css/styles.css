@@ -138,4 +138,5 @@ nav.tabs button.tab.active {
 .raw-view .gutter .fold.leaf      { visibility: hidden; }
 .raw-view .body .line.hidden      { display: none; }
 .raw-view .gutter .gutter-row { display: block; white-space: pre; }
+.raw-view .gutter .gutter-row.hidden { display: none; }
 .raw-view .gutter .gutter-row .line-num { color: var(--nord3); }

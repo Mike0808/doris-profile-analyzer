@@ -36,6 +36,7 @@ export function renderRaw(container, ast) {
   const gutter = el('div', { class: 'gutter' });
   const body   = el('div', { class: 'body' });
   const lineSpans = new Array(lines.length);
+  const gutterRows = new Array(lines.length);
 
   for (let i = 0; i < lines.length; i++) {
     // Gutter row: line number + fold triangle (if any).
@@ -47,6 +48,7 @@ export function renderRaw(container, ast) {
     gutterRow.appendChild(fold);
     gutterRow.appendChild(document.createTextNode('\n'));
     gutter.appendChild(gutterRow);
+    gutterRows[i] = gutterRow;
 
     const span = el('span', { class: 'line' }, lines[i] === '' ? ' ' : lines[i]);
     body.appendChild(span);
@@ -62,6 +64,7 @@ export function renderRaw(container, ast) {
         fold.classList.toggle('collapsed', collapsed);
         for (let k = startIdx + 1; k <= endIdx; k++) {
           lineSpans[k].classList.toggle('hidden', collapsed);
+          gutterRows[k].classList.toggle('hidden', collapsed);
         }
       });
     }
