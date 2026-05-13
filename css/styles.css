@@ -222,3 +222,6 @@ nav.tabs button.tab.active {
 }
 .scan-summary-table .cell { background: var(--nord0); }
 .scan-summary-table .cell.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.scan-summary-table .cell.skew-medium { color: var(--nord13); font-weight: bold; }
+.scan-summary-table .cell.skew-high   { color: var(--nord11); font-weight: bold; }
+.scan-summary-table .cell.filter-good { color: var(--nord14); font-weight: bold; }

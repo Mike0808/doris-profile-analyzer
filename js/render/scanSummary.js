@@ -25,10 +25,28 @@ function execTimeRange(merged) {
   return `${formatNs(merged.execTime.min_ns)}…${formatNs(merged.execTime.max_ns)}`;
 }
 
-function skewDisplay(row) {
-  const r = Math.max(row.skewMergedRatio ?? 0, row.skewScannerRatio ?? 0);
+function skewValue(row) {
+  return Math.max(row.skewMergedRatio ?? 0, row.skewScannerRatio ?? 0);
+}
+
+function skewText(row) {
+  const r = skewValue(row);
   if (!r || !Number.isFinite(r)) return '—';
   return `${r.toFixed(1)}×`;
+}
+
+function skewClass(row) {
+  const r = skewValue(row);
+  if (!Number.isFinite(r)) return '';
+  if (r > 10) return ' skew-high';
+  if (r > 3)  return ' skew-medium';
+  return '';
+}
+
+function filterClass(row) {
+  if (row.filterPct === null) return '';
+  if (row.filterPct >= 50) return ' filter-good';
+  return '';
 }
 
 function renderCell(value, align) {
@@ -55,9 +73,9 @@ export function renderScanSummary(container, ast) {
     table.appendChild(renderCell(formatRows(row.cardinality), 'right'));
     table.appendChild(renderCell(formatRows(row.rowsReadSum), 'right'));
     table.appendChild(renderCell(formatRows(row.rowsProducedSum), 'right'));
-    table.appendChild(renderCell(formatPct(row.filterPct), 'right'));
+    table.appendChild(el('div', { class: 'cell numeric' + filterClass(row) }, formatPct(row.filterPct)));
     table.appendChild(renderCell(execTimeRange(row.merged), 'right'));
-    table.appendChild(renderCell(skewDisplay(row), 'right'));
+    table.appendChild(el('div', { class: 'cell numeric' + skewClass(row) }, skewText(row)));
     table.appendChild(renderCell(formatBytes(row.memoryPeakMergedMax), 'right'));
   }
   wrap.appendChild(table);
