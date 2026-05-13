@@ -1190,6 +1190,43 @@ suite('typeOlapScanInstance', () => {
   });
 });
 
+// ── collectScans — real-sample aggregation (Task 13) ─────────────────────────
+
+import { collectScans } from '../js/parser/operators/olapScan.js';
+
+suite('collectScans — real samples', () => {
+  test('count_lineitem has 1 scan row', async () => {
+    const raw = await (await fetch('../samples/tpch/count_lineitem.txt')).text();
+    const r = runPipeline(raw);
+    const rows = collectScans(r.ast);
+    assertEqual(rows.length, 1);
+    assertEqual(rows[0].table, 'lineitem');
+  });
+  test('tpch_q3 has 3 scan rows (lineitem, orders, customer)', async () => {
+    const raw = await (await fetch('../samples/tpch/tpch_q3.txt')).text();
+    const r = runPipeline(raw);
+    const rows = collectScans(r.ast);
+    assertEqual(rows.length, 3);
+    const tables = rows.map(x => x.table).sort();
+    assertEqual(tables, ['customer', 'lineitem', 'orders']);
+  });
+  test('scan row has instances aggregated', async () => {
+    const raw = await (await fetch('../samples/tpch/count_lineitem.txt')).text();
+    const r = runPipeline(raw);
+    const rows = collectScans(r.ast);
+    assertTrue(rows[0].instances.length >= 8, `Got ${rows[0].instances.length} instances`);
+    assertTrue(rows[0].rowsReadSum > 0);
+  });
+  test('skewMergedRatio computed for customer in tpch_q3', async () => {
+    const raw = await (await fetch('../samples/tpch/tpch_q3.txt')).text();
+    const r = runPipeline(raw);
+    const rows = collectScans(r.ast);
+    const customer = rows.find(x => x.table === 'customer');
+    // customer: ExecTime max=3.910ms, min=340.421us → ratio ≈ 11.5
+    assertTrue(customer.skewMergedRatio > 5, `Got skew ratio ${customer.skewMergedRatio}`);
+  });
+});
+
 // ── JSON ↔ text equivalence — perHost (Task 10) ───────────────────────────────
 // PAIRS is defined in the earlier 'JSON ↔ text equivalence' suite above.
 // countPerHostOperators is defined in the 'Real samples — perHost' suite above.
