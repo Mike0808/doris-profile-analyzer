@@ -127,6 +127,32 @@ export function textParser(input) {
         continue;
       }
 
+      const om2 = RE_COUNTER.exec(line);
+      const om2No = !om2 ? RE_COUNTER_NOVAL.exec(line) : null;
+      const opCounter = om2 || om2No;
+      if (opCounter && opStack.length) {
+        const indent = opCounter[1].length;
+        const key = opCounter[2].trim();
+        const value = om2 ? om2[3] : '';
+        const top = opStack[opStack.length - 1];
+        // Operator counters always indent more than the operator header.
+        if (indent <= top.indent) {
+          // Looks like a stray counter at a shallower level — record a warning.
+          ast.warnings.push({ line: i, message: `Stray counter "${key}" at indent ${indent} <= operator indent ${top.indent}` });
+          continue;
+        }
+        // Maintain a per-operator path stack for nested counters.
+        if (!top.counterStack) top.counterStack = [];
+        while (top.counterStack.length && top.counterStack[top.counterStack.length - 1].indent >= indent) {
+          top.counterStack.pop();
+        }
+        const path = top.counterStack.map(e => e.name).concat([key]).join('.');
+        top.node.attrs.set(path, value);
+        top.counterStack.push({ indent, name: key });
+        top.node.endLine = i;
+        continue;
+      }
+
       // Other MergedProfile content handled in later tasks.
     }
 

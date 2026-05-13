@@ -227,3 +227,45 @@ suite('textParser — operator stack', () => {
     assertEqual(leaf.rawHeader, 'OLAP_SCAN_OPERATOR (id=0. nereids_id=273. table name = lineitem(lineitem)):');
   });
 });
+
+const OP_COUNTERS_FIXTURE = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           RESULT_SINK_OPERATOR (id=0):
+              - CloseTime: avg 20.731us, max 20.731us, min 20.731us
+              - ExecTime: avg 529.994us, max 529.994us, min 529.994us
+              - InputRows: sum 4, avg 4, max 4, min 4
+             EXCHANGE_OPERATOR (id=5):
+                - PlanInfo
+                   - offset: 0
+                - BlocksProduced: sum 5, avg 5, max 5, min 5
+                - ExecTime: avg 682.642us, max 682.642us, min 682.642us
+`;
+
+suite('textParser — operator counters', () => {
+  test('Top-level counters land in attrs', () => {
+    const ast = textParser(OP_COUNTERS_FIXTURE);
+    const root = ast.mergedProfile.fragments[0].pipelines[0].operators;
+    assertEqual(root.attrs.get('CloseTime'), 'avg 20.731us, max 20.731us, min 20.731us');
+    assertEqual(root.attrs.get('ExecTime'), 'avg 529.994us, max 529.994us, min 529.994us');
+    assertEqual(root.attrs.get('InputRows'), 'sum 4, avg 4, max 4, min 4');
+  });
+  test('Sub-counters use dotted keys; parent with no value has empty string', () => {
+    const ast = textParser(OP_COUNTERS_FIXTURE);
+    const child = ast.mergedProfile.fragments[0].pipelines[0].operators.children[0];
+    assertEqual(child.attrs.get('PlanInfo'), '');
+    assertEqual(child.attrs.get('PlanInfo.offset'), '0');
+    assertEqual(child.attrs.get('BlocksProduced'), 'sum 5, avg 5, max 5, min 5');
+    assertEqual(child.attrs.get('ExecTime'), 'avg 682.642us, max 682.642us, min 682.642us');
+  });
+  test('Counters do not bleed across siblings', () => {
+    const ast = textParser(OP_COUNTERS_FIXTURE);
+    const root = ast.mergedProfile.fragments[0].pipelines[0].operators;
+    const child = root.children[0];
+    assertTrue(!root.attrs.has('BlocksProduced'));
+    assertTrue(!child.attrs.has('CloseTime'));
+  });
+});
