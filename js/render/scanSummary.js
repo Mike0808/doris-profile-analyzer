@@ -53,31 +53,78 @@ function renderCell(value, align) {
   return el('div', { class: 'cell' + (align === 'right' ? ' numeric' : '') }, String(value));
 }
 
+function getSortValue(row, key) {
+  switch (key) {
+    case 'table':       return row.table ?? '';
+    case 'partTab':     return row.partitions ?? '';
+    case 'cardinality': return row.cardinality ?? -1;
+    case 'rowsRead':    return row.rowsReadSum ?? -1;
+    case 'rowsProd':    return row.rowsProducedSum ?? -1;
+    case 'filterPct':   return row.filterPct ?? -1;
+    case 'execTime':    return row.merged.execTime?.max_ns ?? -1;
+    case 'skew':        return skewValue(row);
+    case 'memPeak':     return row.memoryPeakMergedMax ?? -1;
+    default:            return 0;
+  }
+}
+
+function sortRows(rows, key, dir) {
+  return [...rows].sort((a, b) => {
+    const av = getSortValue(a, key);
+    const bv = getSortValue(b, key);
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+}
+
 export function renderScanSummary(container, ast) {
   const wrap = el('div', { class: 'scan-summary' });
-  const rows = collectScans(ast);
+  const allRows = collectScans(ast);
 
-  if (rows.length === 0) {
+  if (allRows.length === 0) {
     wrap.appendChild(el('div', { class: 'empty-state' }, 'No OLAP scan operators in this profile.'));
     container.appendChild(wrap);
     return;
   }
 
-  const table = el('div', { class: 'scan-summary-table' });
-  for (const col of COLUMNS) {
-    table.appendChild(el('div', { class: 'header' + (col.align === 'right' ? ' numeric' : '') }, col.label));
+  let sortKey = 'execTime';
+  let sortDir = 'desc';
+
+  function render() {
+    const sorted = sortRows(allRows, sortKey, sortDir);
+    const table = el('div', { class: 'scan-summary-table' });
+
+    for (const col of COLUMNS) {
+      const isActive = col.key === sortKey;
+      const cls = 'header sortable' + (col.align === 'right' ? ' numeric' : '') + (isActive ? ' active' : '');
+      const h = el('div', { class: cls }, [
+        col.label,
+        el('span', { class: 'sort-ind' }, isActive ? (sortDir === 'asc' ? '▲' : '▼') : '◇'),
+      ]);
+      h.addEventListener('click', () => {
+        if (sortKey === col.key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        else { sortKey = col.key; sortDir = col.align === 'right' ? 'desc' : 'asc'; }
+        wrap.removeChild(table);
+        render();
+      });
+      table.appendChild(h);
+    }
+
+    for (const row of sorted) {
+      table.appendChild(renderCell(row.table ?? '—', 'left'));
+      table.appendChild(renderCell(partTabString(row), 'left'));
+      table.appendChild(renderCell(formatRows(row.cardinality), 'right'));
+      table.appendChild(renderCell(formatRows(row.rowsReadSum), 'right'));
+      table.appendChild(renderCell(formatRows(row.rowsProducedSum), 'right'));
+      table.appendChild(el('div', { class: 'cell numeric' + filterClass(row) }, formatPct(row.filterPct)));
+      table.appendChild(renderCell(execTimeRange(row.merged), 'right'));
+      table.appendChild(el('div', { class: 'cell numeric' + skewClass(row) }, skewText(row)));
+      table.appendChild(renderCell(formatBytes(row.memoryPeakMergedMax), 'right'));
+    }
+    wrap.appendChild(table);
   }
-  for (const row of rows) {
-    table.appendChild(renderCell(row.table ?? '—', 'left'));
-    table.appendChild(renderCell(partTabString(row), 'left'));
-    table.appendChild(renderCell(formatRows(row.cardinality), 'right'));
-    table.appendChild(renderCell(formatRows(row.rowsReadSum), 'right'));
-    table.appendChild(renderCell(formatRows(row.rowsProducedSum), 'right'));
-    table.appendChild(el('div', { class: 'cell numeric' + filterClass(row) }, formatPct(row.filterPct)));
-    table.appendChild(renderCell(execTimeRange(row.merged), 'right'));
-    table.appendChild(el('div', { class: 'cell numeric' + skewClass(row) }, skewText(row)));
-    table.appendChild(renderCell(formatBytes(row.memoryPeakMergedMax), 'right'));
-  }
-  wrap.appendChild(table);
+
+  render();
   container.appendChild(wrap);
 }

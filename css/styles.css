@@ -225,3 +225,7 @@ nav.tabs button.tab.active {
 .scan-summary-table .cell.skew-medium { color: var(--nord13); font-weight: bold; }
 .scan-summary-table .cell.skew-high   { color: var(--nord11); font-weight: bold; }
 .scan-summary-table .cell.filter-good { color: var(--nord14); font-weight: bold; }
+.scan-summary-table .header.sortable { cursor: pointer; }
+.scan-summary-table .header.sortable:hover { background: var(--nord2); }
+.scan-summary-table .header .sort-ind { margin-left: 0.3em; color: var(--nord3); }
+.scan-summary-table .header.active .sort-ind { color: var(--nord8); }
