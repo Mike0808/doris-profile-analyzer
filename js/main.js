@@ -67,9 +67,61 @@ async function loadFile(file) {
   const text = await file.text();
   const result = runPipeline(text);
   currentProfile = { fileName: file.name, sizeBytes: file.size, result };
-  fileMeta.textContent = `${file.name} (${file.size} bytes) — format=${result.ok ? result.ast.format : 'error'}`;
-  window.__profile = currentProfile;   // exposed for quick manual inspection
+  renderHeader();
   renderActive();
+  window.__profile = currentProfile;
+}
+
+function renderHeader() {
+  clear(fileMeta);
+  if (!currentProfile) return;
+  const { fileName, sizeBytes, result } = currentProfile;
+  fileMeta.appendChild(field('file', fileName));
+  fileMeta.appendChild(field('size', formatBytes(sizeBytes)));
+  if (!result.ok) {
+    fileMeta.appendChild(field('error', result.error, 'fail'));
+    return;
+  }
+  fileMeta.appendChild(field('format', result.ast.format));
+  for (const k of ['Profile ID', 'Total', 'Task State']) {
+    const v = result.ast.summary.get(k);
+    if (v) fileMeta.appendChild(field(k, v));
+  }
+  if (result.ast.warnings.length > 0) {
+    const badge = el('span', { class: 'badge' }, `⚠ ${result.ast.warnings.length} warnings`);
+    badge.addEventListener('click', toggleWarningsPanel);
+    fileMeta.appendChild(badge);
+  }
+}
+
+function field(k, v, cls) {
+  return el('span', { class: 'field' + (cls ? ' ' + cls : '') }, [
+    el('span', { class: 'k' }, k + ':'),
+    el('span', { class: 'v' }, String(v)),
+  ]);
+}
+
+function formatBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+}
+
+// Warnings panel.
+const warningsPanel = el('div', { class: 'warnings-panel', id: 'warnings-panel' });
+document.body.appendChild(warningsPanel);
+
+function toggleWarningsPanel() {
+  const visible = warningsPanel.classList.toggle('visible');
+  if (visible) {
+    clear(warningsPanel);
+    for (const w of currentProfile.result.ast.warnings) {
+      warningsPanel.appendChild(el('div', { class: 'w-row' }, [
+        el('span', { class: 'w-line' }, `L${w.line + 1}:`),
+        document.createTextNode(w.message),
+      ]));
+    }
+  }
 }
 
 registerTab('Raw', renderRaw);
