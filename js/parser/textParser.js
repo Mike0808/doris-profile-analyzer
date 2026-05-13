@@ -1,7 +1,10 @@
 // textParser: indent-aware state machine over classified lines.
 // See docs/superpowers/specs/2026-05-12-iteration-1-parser-raw-design.md §5
 
-import { createAst, createFragment, createPipeline, createOperator } from './ast.js';
+import {
+  createAst, createFragment, createPipeline, createOperator,
+  createPerHostFragment, createPerHostPipeline, createPipelineTask, createFragmentLevel,
+} from './ast.js';
 import { detect } from './detect.js';
 import { unwrapJson } from './jsonParser.js';
 
@@ -11,11 +14,16 @@ const RE_COUNTER_NOVAL = /^(\s*)-\s+([^:]+?)\s*$/;       // '- PlanInfo' (no val
 
 const RE_FRAGMENT        = /^\s+Fragment\s+(\d+)\s*:\s*$/;
 const RE_PIPELINE_MERGED = /^\s+Pipeline\s*:\s*(\d+)\s*\(instance_num=(\d+)\)\s*:\s*$/;
-const RE_PIPELINE_PERHOST = /^\s+Pipeline\s*:\s*(\d+)\s+\(host=/;
-// "Execution Profile <query_id>:" begins the per-instance execution detail section.
-// Doris 3.x profile format: appears after MergedProfile, before per-host Pipeline lines.
-const RE_EXEC_PROFILE    = /^Execution Profile [0-9a-f-]+\s*:/;
 const RE_OPERATOR        = /^(\s*)([A-Z_]+_OPERATOR)\b.*?\(id=(-?\d+)[^\n]*\)\s*:\s*$/;
+
+// perHost section regexes
+// Doris 3.x: https://doris.apache.org/docs/3.x/query-acceleration/tuning/profiling-tools/
+const RE_EXEC_PROFILE_OPEN     = /^Execution Profile [0-9a-f-]+\s*:/;
+const RE_PERHOST_FRAGMENTS     = /^\s+Fragments:\s*$/;
+const RE_PERHOST_FRAGMENT      = /^\s+Fragment\s+(\d+)\s*:\s*$/;
+const RE_FRAGMENT_LEVEL        = /^\s+Fragment Level Profile:\s+\(host=([^)]+(?:\)[^)]*)?)\):\(ExecTime:\s+([^)]+)\)/;
+const RE_PIPELINE_PERHOST_FULL = /^\s+Pipeline\s*:\s*(\d+)\s+\(host=([^)]+(?:\)[^)]*)?)\):\s*$/;
+const RE_PIPELINE_TASK         = /^\s+PipelineTask\s+\(index=(\d+)\):\(ExecTime:\s+([^)]+)\)/;
 
 export function textParser(input) {
   const ast = createAst();
@@ -28,6 +36,7 @@ export function textParser(input) {
   let lastCounterEntry = null;      // {key, mapRef} — used for multi-line continuation
   let opStack = [];                 // [{indent, node, counterStack?}] for current pipeline
   let opaque = null;
+  let perHostState = null;
   const flushOpaque = () => {
     if (opaque) {
       ast.opaqueBlocks.push({
@@ -67,6 +76,22 @@ export function textParser(input) {
       continue;
     }
 
+    // perHost section opens on 'Execution Profile <id>:' header.
+    if (RE_EXEC_PROFILE_OPEN.test(line)) {
+      flushOpaque();
+      section = 'perHost';
+      counterStack = [];
+      lastCounterEntry = null;
+      opStack = [];
+      perHostState = {
+        currentFragment: null,
+        currentFragmentLevel: null,
+        currentPipeline: null,
+        currentTask: null,
+      };
+      continue;
+    }
+
     if (section === 'summary' || section === 'executionSummary') {
       const targetMap = section === 'summary' ? ast.summary : ast.executionSummary;
 
@@ -103,13 +128,26 @@ export function textParser(input) {
     }
 
     if (section === 'mergedProfile') {
-      // "Execution Profile <id>:" marks the start of per-instance execution details.
-      // Everything from here to EOF is opaque (contains per-host Pipeline / PipelineTask entries).
-      if (RE_EXEC_PROFILE.test(line) || RE_PIPELINE_PERHOST.test(line)) {
+      // Implicit opener: per-host Pipeline appearing inside MergedProfile without
+      // a preceding 'Execution Profile' header. Open perHost section lazily.
+      if (RE_PIPELINE_PERHOST_FULL.test(line)) {
         flushOpaque();
-        opaque = { kind: 'perHostPipelines', startLine: i, lines: [line] };
-        section = null;          // stop structured parsing
+        section = 'perHost';
         opStack = [];
+        perHostState = {
+          currentFragment: null,
+          currentFragmentLevel: null,
+          currentPipeline: null,
+          currentTask: null,
+        };
+        ast.warnings.push({ line: i, message: 'per-host pipeline without preceding "Execution Profile" header — opened section implicitly' });
+        // Implicit opener has no Fragment context — create a synthetic Fragment 0.
+        perHostState.currentFragment = createPerHostFragment({ id: 0, startLine: i });
+        ast.perHost.fragments.push(perHostState.currentFragment);
+        const pp = RE_PIPELINE_PERHOST_FULL.exec(line);
+        const pipeline = createPerHostPipeline({ id: parseInt(pp[1], 10), host: pp[2], startLine: i });
+        perHostState.currentFragment.pipelines.push(pipeline);
+        perHostState.currentPipeline = pipeline;
         continue;
       }
 
@@ -194,6 +232,55 @@ export function textParser(input) {
       }
 
       // Other MergedProfile content handled in later tasks.
+    }
+
+    if (section === 'perHost') {
+      // Fragment container line — no-op, just a label.
+      if (RE_PERHOST_FRAGMENTS.test(line)) continue;
+
+      const fm = RE_PERHOST_FRAGMENT.exec(line);
+      if (fm) {
+        perHostState.currentFragment = createPerHostFragment({ id: parseInt(fm[1], 10), startLine: i });
+        ast.perHost.fragments.push(perHostState.currentFragment);
+        perHostState.currentFragmentLevel = null;
+        perHostState.currentPipeline = null;
+        perHostState.currentTask = null;
+        opStack = [];
+        continue;
+      }
+
+      const fl = RE_FRAGMENT_LEVEL.exec(line);
+      if (fl && perHostState.currentFragment) {
+        const fragmentLevel = createFragmentLevel({ host: fl[1], execTime: fl[2], startLine: i });
+        perHostState.currentFragment.fragmentLevel = fragmentLevel;
+        perHostState.currentFragmentLevel = fragmentLevel;
+        perHostState.currentPipeline = null;
+        perHostState.currentTask = null;
+        opStack = [];
+        continue;
+      }
+
+      const pp = RE_PIPELINE_PERHOST_FULL.exec(line);
+      if (pp && perHostState.currentFragment) {
+        const pipeline = createPerHostPipeline({ id: parseInt(pp[1], 10), host: pp[2], startLine: i });
+        perHostState.currentFragment.pipelines.push(pipeline);
+        perHostState.currentPipeline = pipeline;
+        perHostState.currentFragmentLevel = null;
+        perHostState.currentTask = null;
+        opStack = [];
+        continue;
+      }
+
+      const pt = RE_PIPELINE_TASK.exec(line);
+      if (pt && perHostState.currentPipeline) {
+        const task = createPipelineTask({ index: parseInt(pt[1], 10), execTime: pt[2], startLine: i });
+        perHostState.currentPipeline.tasks.push(task);
+        perHostState.currentTask = task;
+        opStack = [];
+        continue;
+      }
+
+      // Operators and counters handled in subsequent tasks (5, 6, 7).
     }
 
     // Fall-through: if an opaque block is active, append; otherwise silently drop.

@@ -319,14 +319,16 @@ suite('textParser — opaqueBlocks', () => {
     assertContains(b.text, 'PhysicalResultSink');
     assertContains(b.text, 'PhysicalHashAggregate');
   });
-  test('Per-host pipelines captured', () => {
+  test('Per-host pipeline parsed into ast.perHost (implicit opener)', () => {
+    // Implicit opener: pipeline inside MergedProfile without "Execution Profile" header.
+    // Now parsed structurally into ast.perHost instead of an opaque block.
     const ast = textParser(OPAQUE_FIXTURE);
-    const b = findBlock(ast, 'perHostPipelines');
-    assertTrue(b !== null);
-    assertContains(b.text, 'PipelineTask (index=0)');
-    assertContains(b.text, 'host=TNetworkAddress');
+    assertTrue(ast.perHost.fragments.length >= 1);
+    const p = ast.perHost.fragments[0].pipelines[0];
+    assertTrue(p !== undefined);
+    assertContains(p.host, 'TNetworkAddress');
   });
-  test('MergedProfile structure still parsed alongside opaqueBlocks', () => {
+  test('MergedProfile structure still parsed alongside perHost', () => {
     const ast = textParser(OPAQUE_FIXTURE);
     assertEqual(ast.mergedProfile.fragments.length, 1);
     const root = ast.mergedProfile.fragments[0].pipelines[0].operators;
@@ -334,10 +336,8 @@ suite('textParser — opaqueBlocks', () => {
   });
 });
 
-// Regression: "Execution Profile <id>:" section appeared after MergedProfile content
-// and was previously parsed as structured MergedProfile, producing stray-counter warnings
-// and a phantom Fragment 0 from the per-host execution detail block.
-// Fix: treat "Execution Profile <id>:" as the start of the perHostPipelines opaque block.
+// "Execution Profile <id>:" section appeared after MergedProfile content.
+// Now parsed structurally into ast.perHost (Fragment/FragmentLevel/Pipeline/PipelineTask).
 const EXEC_PROFILE_FIXTURE = `Summary:
    - Profile ID: abc
 MergedProfile
@@ -358,16 +358,17 @@ Execution Profile abc123-def456:
            - TaskState: Finished
 `;
 
-suite('textParser — Execution Profile opaque', () => {
-  test('Execution Profile section is captured as perHostPipelines opaque block', () => {
+suite('textParser — Execution Profile structured', () => {
+  test('Execution Profile section parsed into ast.perHost (not opaque)', () => {
     const ast = textParser(EXEC_PROFILE_FIXTURE);
-    const b = ast.opaqueBlocks.find(b => b.kind === 'perHostPipelines');
-    assertTrue(b !== null);
-    assertContains(b.text, 'Execution Profile abc123-def456');
-    assertContains(b.text, 'BuildPipelinesTime');
-    assertContains(b.text, 'PipelineTask');
+    assertEqual(ast.perHost.fragments.length, 1);
+    assertEqual(ast.perHost.fragments[0].id, 0);
+    const fl = ast.perHost.fragments[0].fragmentLevel;
+    assertTrue(fl !== null);
+    assertContains(fl.host, '10.0.0.1');
+    assertEqual(fl.execTime, '1ms');
   });
-  test('Only 1 fragment parsed (Execution Profile "Fragment 0" is NOT a MergedProfile fragment)', () => {
+  test('Only 1 merged fragment (Execution Profile "Fragment 0" is NOT a MergedProfile fragment)', () => {
     const ast = textParser(EXEC_PROFILE_FIXTURE);
     assertEqual(ast.mergedProfile.fragments.length, 1);
   });
@@ -380,6 +381,13 @@ suite('textParser — Execution Profile opaque', () => {
     const root = ast.mergedProfile.fragments[0].pipelines[0].operators;
     assertEqual(root.name, 'RESULT_SINK_OPERATOR');
     assertEqual(root.attrs.get('ExecTime'), 'avg 1us, max 1us, min 1us');
+  });
+  test('PipelineTask parsed in perHost section', () => {
+    const ast = textParser(EXEC_PROFILE_FIXTURE);
+    const tasks = ast.perHost.fragments[0].pipelines[0].tasks;
+    assertEqual(tasks.length, 1);
+    assertEqual(tasks[0].index, 0);
+    assertEqual(tasks[0].execTime, '679us');
   });
 });
 
@@ -722,5 +730,71 @@ suite('AST factories — perHost', () => {
     assertEqual(t.execTime, '679.83us');
     assertTrue(t.attrs instanceof Map);
     assertEqual(t.operators, null);
+  });
+});
+
+// ── textParser — perHost skeleton (Task 4) ────────────────────────────────────
+
+const PERHOST_SKELETON_FIXTURE = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+Execution Profile abc-123:
+  Fragments:
+    Fragment 0:
+      Fragment Level Profile:  (host=TNetworkAddress(hostname:10.0.0.1, port:9050)):(ExecTime: 6.954ms)
+      Pipeline :0  (host=TNetworkAddress(hostname:10.0.0.1, port:9050)):
+        PipelineTask (index=0):(ExecTime: 679.83us)
+        PipelineTask (index=1):(ExecTime: 711.21us)
+    Fragment 1:
+      Fragment Level Profile:  (host=TNetworkAddress(hostname:10.0.0.2, port:9050)):(ExecTime: 7.143ms)
+      Pipeline :0  (host=TNetworkAddress(hostname:10.0.0.2, port:9050)):
+        PipelineTask (index=0):(ExecTime: 598.241us)
+`;
+
+suite('textParser — perHost skeleton', () => {
+  test('perHost has two fragments', () => {
+    const ast = textParser(PERHOST_SKELETON_FIXTURE);
+    assertEqual(ast.perHost.fragments.length, 2);
+    assertEqual(ast.perHost.fragments[0].id, 0);
+    assertEqual(ast.perHost.fragments[1].id, 1);
+  });
+  test('fragmentLevel header parsed (host + execTime)', () => {
+    const ast = textParser(PERHOST_SKELETON_FIXTURE);
+    const fl = ast.perHost.fragments[0].fragmentLevel;
+    assertTrue(fl !== null);
+    assertContains(fl.host, '10.0.0.1');
+    assertEqual(fl.execTime, '6.954ms');
+  });
+  test('pipelines parsed with host', () => {
+    const ast = textParser(PERHOST_SKELETON_FIXTURE);
+    const p = ast.perHost.fragments[0].pipelines[0];
+    assertEqual(p.id, 0);
+    assertContains(p.host, '10.0.0.1');
+  });
+  test('pipeline tasks parsed with index and execTime', () => {
+    const ast = textParser(PERHOST_SKELETON_FIXTURE);
+    const tasks = ast.perHost.fragments[0].pipelines[0].tasks;
+    assertEqual(tasks.length, 2);
+    assertEqual(tasks[0].index, 0);
+    assertEqual(tasks[0].execTime, '679.83us');
+    assertEqual(tasks[1].index, 1);
+    assertEqual(tasks[1].execTime, '711.21us');
+  });
+  test('Tasks have operators=null until Task 5 lands operator parsing', () => {
+    const ast = textParser(PERHOST_SKELETON_FIXTURE);
+    for (const f of ast.perHost.fragments) {
+      for (const p of f.pipelines) {
+        for (const t of p.tasks) {
+          assertEqual(t.operators, null);
+        }
+      }
+    }
+  });
+  test('mergedProfile still parsed', () => {
+    const ast = textParser(PERHOST_SKELETON_FIXTURE);
+    assertEqual(ast.mergedProfile.fragments.length, 1);
   });
 });
