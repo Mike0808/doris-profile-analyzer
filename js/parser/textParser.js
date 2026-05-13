@@ -12,6 +12,9 @@ const RE_COUNTER_NOVAL = /^(\s*)-\s+([^:]+?)\s*$/;       // '- PlanInfo' (no val
 const RE_FRAGMENT        = /^\s+Fragment\s+(\d+)\s*:\s*$/;
 const RE_PIPELINE_MERGED = /^\s+Pipeline\s*:\s*(\d+)\s*\(instance_num=(\d+)\)\s*:\s*$/;
 const RE_PIPELINE_PERHOST = /^\s+Pipeline\s*:\s*(\d+)\s+\(host=/;
+// "Execution Profile <query_id>:" begins the per-instance execution detail section.
+// Doris 3.x profile format: appears after MergedProfile, before per-host Pipeline lines.
+const RE_EXEC_PROFILE    = /^Execution Profile [0-9a-f-]+\s*:/;
 const RE_OPERATOR        = /^(\s*)([A-Z_]+_OPERATOR)\b.*?\(id=(-?\d+)[^\n]*\)\s*:\s*$/;
 
 export function textParser(input) {
@@ -100,7 +103,9 @@ export function textParser(input) {
     }
 
     if (section === 'mergedProfile') {
-      if (RE_PIPELINE_PERHOST.test(line)) {
+      // "Execution Profile <id>:" marks the start of per-instance execution details.
+      // Everything from here to EOF is opaque (contains per-host Pipeline / PipelineTask entries).
+      if (RE_EXEC_PROFILE.test(line) || RE_PIPELINE_PERHOST.test(line)) {
         flushOpaque();
         opaque = { kind: 'perHostPipelines', startLine: i, lines: [line] };
         section = null;          // stop structured parsing
