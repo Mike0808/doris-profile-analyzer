@@ -1,5 +1,10 @@
 import { suite, test, assertEqual, assertTrue, assertContains } from './runner.js';
 import { createAst, createOperator, createPipeline, createFragment } from '../js/parser/ast.js';
+import {
+  parseDuration, parseBytes, parseRowCount,
+  parseAvgMaxMin, parseSumAvgMaxMin, parseSumAvgMaxMinRows,
+  parseScalarTime, parseArray,
+} from '../js/util/format.js';
 
 suite('Runner smoke', () => {
   test('assertEqual on equal values passes', () => {
@@ -522,4 +527,121 @@ suite('JSON ↔ text equivalence', () => {
       assertEqual(countOperators(t.ast), countOperators(j.ast));
     });
   }
+});
+
+// ── util/format — parsers ─────────────────────────────────────────────────────
+
+suite('util/format — parsers', () => {
+  // parseDuration
+  test('parseDuration: ns', () => {
+    assertEqual(parseDuration('0ns'), 0);
+    assertEqual(parseDuration('915ns'), 915);
+  });
+  test('parseDuration: us', () => {
+    assertEqual(parseDuration('87.130us'), 87130);
+    assertEqual(parseDuration('1us'), 1000);
+  });
+  test('parseDuration: ms — trailing zero is decimal', () => {
+    assertEqual(parseDuration('1.578ms'), 1578000);
+    assertEqual(parseDuration('1.40ms'), 1400000);
+    assertEqual(parseDuration('105ms'), 105000000);
+  });
+  test('parseDuration: s and min', () => {
+    assertEqual(parseDuration('2.5s'), 2500000000);
+    assertEqual(parseDuration('1min'), 60000000000);
+  });
+  test('parseDuration: unparseable → null', () => {
+    assertEqual(parseDuration('xyz'), null);
+    assertEqual(parseDuration(''), null);
+    assertEqual(parseDuration(null), null);
+  });
+
+  // parseBytes
+  test('parseBytes: trailing-space zero', () => {
+    assertEqual(parseBytes('0.00 '), 0);
+    assertEqual(parseBytes('0.00'), 0);
+  });
+  test('parseBytes: B/KB/MB/GB', () => {
+    assertEqual(parseBytes('64.00 B'), 64);
+    assertEqual(parseBytes('192.00 KB'), 196608);
+    assertEqual(parseBytes('4.75 MB'), 4980736);
+    assertEqual(parseBytes('2.25 KB'), 2304);
+  });
+  test('parseBytes: unparseable → null', () => {
+    assertEqual(parseBytes('xyz'), null);
+  });
+
+  // parseRowCount
+  test('parseRowCount: integer in parens preferred', () => {
+    assertEqual(parseRowCount('6.001215M (6001215)'), 6001215);
+    assertEqual(parseRowCount('250.05K (250050)'), 250050);
+  });
+  test('parseRowCount: bare number', () => {
+    assertEqual(parseRowCount('251384'), 251384);
+    assertEqual(parseRowCount('0'), 0);
+  });
+  test('parseRowCount: bare M/K suffix without parens', () => {
+    assertEqual(parseRowCount('6.001215M'), 6001215);
+    assertEqual(parseRowCount('250.05K'), 250050);
+  });
+  test('parseRowCount: unparseable → null', () => {
+    assertEqual(parseRowCount('xyz'), null);
+  });
+
+  // parseAvgMaxMin
+  test('parseAvgMaxMin: standard format', () => {
+    assertEqual(
+      parseAvgMaxMin('avg 1.578ms, max 2.252ms, min 931.799us'),
+      { avg_ns: 1578000, max_ns: 2252000, min_ns: 931799 }
+    );
+  });
+  test('parseAvgMaxMin: zero ns', () => {
+    assertEqual(
+      parseAvgMaxMin('avg 0ns, max 0ns, min 0ns'),
+      { avg_ns: 0, max_ns: 0, min_ns: 0 }
+    );
+  });
+  test('parseAvgMaxMin: malformed → null', () => {
+    assertEqual(parseAvgMaxMin('only avg here'), null);
+  });
+
+  // parseSumAvgMaxMin
+  // Note: avg 181.33 KB = Math.round(181.33 * 1024) = 185682 bytes
+  test('parseSumAvgMaxMin: bytes', () => {
+    assertEqual(
+      parseSumAvgMaxMin('sum 4.25 MB, avg 181.33 KB, max 256.00 KB, min 64.00 KB'),
+      { sum: 4456448, avg: 185682, max: 262144, min: 65536 }
+    );
+  });
+
+  // parseSumAvgMaxMinRows
+  test('parseSumAvgMaxMinRows: rows', () => {
+    assertEqual(
+      parseSumAvgMaxMinRows('sum 6.001215M (6001215), avg 250.05K (250050), max 252.575K (252575), min 247.901K (247901)'),
+      { sum: 6001215, avg: 250050, max: 252575, min: 247901 }
+    );
+  });
+
+  // parseScalarTime
+  test('parseScalarTime: alias for parseDuration', () => {
+    assertEqual(parseScalarTime('1.614ms'), 1614000);
+  });
+
+  // parseArray
+  test('parseArray: trailing comma+space tolerated', () => {
+    assertEqual(
+      parseArray('[163.063us, 64.045us, 112.836us, 17.614us, ]', parseScalarTime),
+      [163063, 64045, 112836, 17614]
+    );
+  });
+  test('parseArray: empty array', () => {
+    assertEqual(parseArray('[]', parseScalarTime), []);
+    assertEqual(parseArray('[ ]', parseScalarTime), []);
+  });
+  test('parseArray: row counts', () => {
+    assertEqual(
+      parseArray('[63.01K, 63.03K, 62.98K, 62.36K, ]', parseRowCount),
+      [63010, 63030, 62980, 62360]
+    );
+  });
 });
