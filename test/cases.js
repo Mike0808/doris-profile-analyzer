@@ -1061,3 +1061,29 @@ suite('Real samples — perHost', () => {
     });
   }
 });
+
+// ── JSON ↔ text equivalence — perHost (Task 10) ───────────────────────────────
+// PAIRS is defined in the earlier 'JSON ↔ text equivalence' suite above.
+// countPerHostOperators is defined in the 'Real samples — perHost' suite above.
+
+suite('JSON ↔ text equivalence — perHost', () => {
+  for (const [txtPath, jsonPath] of PAIRS) {
+    test(`${txtPath} ≡ ${jsonPath} — perHost fragment count`, async () => {
+      const t = runPipeline(await (await fetch(txtPath)).text());
+      const j = runPipeline(await (await fetch(jsonPath)).text());
+      assertEqual(t.ast.perHost.fragments.length, j.ast.perHost.fragments.length);
+    });
+    test(`${txtPath} ≡ ${jsonPath} — perHost pipeline counts per fragment`, async () => {
+      const t = runPipeline(await (await fetch(txtPath)).text());
+      const j = runPipeline(await (await fetch(jsonPath)).text());
+      const tPipes = t.ast.perHost.fragments.map(f => f.pipelines.length);
+      const jPipes = j.ast.perHost.fragments.map(f => f.pipelines.length);
+      assertEqual(tPipes, jPipes);
+    });
+    test(`${txtPath} ≡ ${jsonPath} — perHost operator counts`, async () => {
+      const t = runPipeline(await (await fetch(txtPath)).text());
+      const j = runPipeline(await (await fetch(jsonPath)).text());
+      assertEqual(countPerHostOperators(t.ast), countPerHostOperators(j.ast));
+    });
+  }
+});
