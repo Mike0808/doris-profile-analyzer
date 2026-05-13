@@ -1062,6 +1062,68 @@ suite('Real samples — perHost', () => {
   }
 });
 
+// ── typeOlapScan — merged-side accessor (Task 11) ────────────────────────────
+
+import { typeOlapScan } from '../js/parser/operators/olapScan.js';
+
+function makeMergedScanNode() {
+  const node = {
+    name: 'OLAP_SCAN_OPERATOR',
+    rawHeader: 'OLAP_SCAN_OPERATOR (id=0. nereids_id=209. table name = lineitem(lineitem)):',
+    id: 0,
+    meta: new Map(),
+    attrs: new Map(),
+    startLine: 0, endLine: 0, children: [],
+  };
+  node.attrs.set('PlanInfo', '');
+  node.attrs.set('PlanInfo.TABLE', 'tpch.lineitem(lineitem), PREAGGREGATION: ON');
+  node.attrs.set('PlanInfo.partitions', '1/1 (lineitem)');
+  node.attrs.set('PlanInfo.tablets', '96/96, tabletList=1,2,3 ...');
+  node.attrs.set('PlanInfo.cardinality', '6001215, avgRowSize=157.78, numNodes=3');
+  node.attrs.set('PlanInfo.pushAggOp', 'COUNT');
+  node.attrs.set('ExecTime', 'avg 1.578ms, max 2.252ms, min 931.799us');
+  node.attrs.set('RowsProduced', 'sum 6.001215M (6001215), avg 250.05K (250050), max 252.575K (252575), min 247.901K (247901)');
+  node.attrs.set('BlocksProduced', 'sum 96, avg 4, max 4, min 4');
+  node.attrs.set('MemoryUsagePeak', 'sum 4.75 MB, avg 202.67 KB, max 256.00 KB, min 128.00 KB');
+  node.attrs.set('WaitForDependency[OLAP_SCAN_OPERATOR_DEPENDENCY]Time', 'avg 521.603us, max 1.152ms, min 83.117us');
+  return node;
+}
+
+suite('typeOlapScan', () => {
+  test('extracts table name (without alias parens)', () => {
+    const t = typeOlapScan(makeMergedScanNode());
+    assertEqual(t.table, 'lineitem');
+  });
+  test('extracts cardinality as integer', () => {
+    const t = typeOlapScan(makeMergedScanNode());
+    assertEqual(t.cardinality, 6001215);
+  });
+  test('extracts pushAggOp and partitions/tablets raw', () => {
+    const t = typeOlapScan(makeMergedScanNode());
+    assertEqual(t.pushAggOp, 'COUNT');
+    assertEqual(t.partitions, '1/1 (lineitem)');
+    assertEqual(t.tablets, '96/96, tabletList=1,2,3 ...');
+  });
+  test('parses ExecTime avg/max/min triple', () => {
+    const t = typeOlapScan(makeMergedScanNode());
+    assertEqual(t.execTime, { avg_ns: 1578000, max_ns: 2252000, min_ns: 931799 });
+  });
+  test('parses RowsProduced sum/avg/max/min', () => {
+    const t = typeOlapScan(makeMergedScanNode());
+    assertEqual(t.rowsProduced, { sum: 6001215, avg: 250050, max: 252575, min: 247901 });
+  });
+  test('parses MemoryUsagePeak in bytes', () => {
+    const t = typeOlapScan(makeMergedScanNode());
+    assertEqual(t.memoryPeak.max, 262144);
+  });
+  test('null for missing counters', () => {
+    const node = makeMergedScanNode();
+    node.attrs.delete('WaitForDependency[OLAP_SCAN_OPERATOR_DEPENDENCY]Time');
+    const t = typeOlapScan(node);
+    assertEqual(t.waitForDependency, null);
+  });
+});
+
 // ── JSON ↔ text equivalence — perHost (Task 10) ───────────────────────────────
 // PAIRS is defined in the earlier 'JSON ↔ text equivalence' suite above.
 // countPerHostOperators is defined in the 'Real samples — perHost' suite above.
