@@ -9,6 +9,7 @@ const RE_COUNTER_NOVAL = /^(\s*)-\s+([^:]+?)\s*$/;       // '- PlanInfo' (no val
 
 const RE_FRAGMENT        = /^\s+Fragment\s+(\d+)\s*:\s*$/;
 const RE_PIPELINE_MERGED = /^\s+Pipeline\s*:\s*(\d+)\s*\(instance_num=(\d+)\)\s*:\s*$/;
+const RE_PIPELINE_PERHOST = /^\s+Pipeline\s*:\s*(\d+)\s+\(host=/;
 const RE_OPERATOR        = /^(\s*)([A-Z_]+_OPERATOR)\b.*?\(id=(-?\d+)[^\n]*\)\s*:\s*$/;
 
 export function textParser(input) {
@@ -21,6 +22,18 @@ export function textParser(input) {
   let counterStack = [];
   let lastCounterEntry = null;      // {key, mapRef} — used for multi-line continuation
   let opStack = [];                 // [{indent, node, counterStack?}] for current pipeline
+  let opaque = null;
+  const flushOpaque = () => {
+    if (opaque) {
+      ast.opaqueBlocks.push({
+        kind: opaque.kind,
+        startLine: opaque.startLine,
+        endLine: opaque.startLine + opaque.lines.length - 1,
+        text: opaque.lines.join('\n'),
+      });
+      opaque = null;
+    }
+  };
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -28,10 +41,22 @@ export function textParser(input) {
     const secMatch = RE_SECTION.exec(line);
     if (secMatch) {
       const name = secMatch[1];
-      if      (name === 'Summary')           section = 'summary';
-      else if (name === 'Execution Summary') section = 'executionSummary';
-      else if (name === 'MergedProfile')     section = 'mergedProfile';
-      else                                    section = null;
+      flushOpaque();
+      if      (name === 'Summary')                    section = 'summary';
+      else if (name === 'Execution Summary')          section = 'executionSummary';
+      else if (name === 'MergedProfile')              section = 'mergedProfile';
+      else if (name === 'Changed Session Variables') {
+        section = null;
+        opaque = { kind: 'changedSessionVariables', startLine: i, lines: [line] };
+        counterStack = []; lastCounterEntry = null;
+        continue;
+      }
+      else if (name === 'Physical Plan') {
+        section = null;
+        opaque = { kind: 'physicalPlan', startLine: i, lines: [line] };
+        counterStack = []; lastCounterEntry = null;
+        continue;
+      }
       counterStack = [];
       lastCounterEntry = null;
       continue;
@@ -73,6 +98,14 @@ export function textParser(input) {
     }
 
     if (section === 'mergedProfile') {
+      if (RE_PIPELINE_PERHOST.test(line)) {
+        flushOpaque();
+        opaque = { kind: 'perHostPipelines', startLine: i, lines: [line] };
+        section = null;          // stop structured parsing
+        opStack = [];
+        continue;
+      }
+
       const fm = RE_FRAGMENT.exec(line);
       if (fm) {
         ast.mergedProfile.fragments.push(
@@ -156,9 +189,12 @@ export function textParser(input) {
       // Other MergedProfile content handled in later tasks.
     }
 
-    // Outside Summary/Execution Summary/MergedProfile, or unrecognised: ignore for now.
-    // Later tasks (9–10) handle the rest.
+    // Fall-through: if an opaque block is active, append; otherwise silently drop.
+    if (opaque) {
+      opaque.lines.push(line);
+    }
   }
 
+  flushOpaque();
   return ast;
 }

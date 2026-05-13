@@ -269,3 +269,60 @@ suite('textParser — operator counters', () => {
     assertTrue(!child.attrs.has('CloseTime'));
   });
 });
+
+const OPAQUE_FIXTURE = `Summary:
+   - Profile ID: x
+
+Changed Session Variables:
+VarName | CurrentValue | DefaultValue
+enable_profile | true | false
+
+
+Physical Plan
+PhysicalResultSink[245] ( outputExprs=[COUNT(*)#16] )
+     +--PhysicalHashAggregate[230]@2
+
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           RESULT_SINK_OPERATOR (id=0):
+              - ExecTime: avg 1us, max 1us, min 1us
+      Pipeline :0  (host=TNetworkAddress(hostname:10.29.81.155, port:9050)):
+        PipelineTask (index=0):(ExecTime: 1.900ms)
+          RESULT_SINK_OPERATOR (id=0):(ExecTime: 529.994us)
+              - ExecTime: avg 529.994us, max 529.994us, min 529.994us
+`;
+
+function findBlock(ast, kind) {
+  return ast.opaqueBlocks.find(b => b.kind === kind) || null;
+}
+
+suite('textParser — opaqueBlocks', () => {
+  test('Changed Session Variables captured', () => {
+    const ast = textParser(OPAQUE_FIXTURE);
+    const b = findBlock(ast, 'changedSessionVariables');
+    assertTrue(b !== null);
+    assertContains(b.text, 'enable_profile');
+  });
+  test('Physical Plan captured', () => {
+    const ast = textParser(OPAQUE_FIXTURE);
+    const b = findBlock(ast, 'physicalPlan');
+    assertTrue(b !== null);
+    assertContains(b.text, 'PhysicalResultSink');
+    assertContains(b.text, 'PhysicalHashAggregate');
+  });
+  test('Per-host pipelines captured', () => {
+    const ast = textParser(OPAQUE_FIXTURE);
+    const b = findBlock(ast, 'perHostPipelines');
+    assertTrue(b !== null);
+    assertContains(b.text, 'PipelineTask (index=0)');
+    assertContains(b.text, 'host=TNetworkAddress');
+  });
+  test('MergedProfile structure still parsed alongside opaqueBlocks', () => {
+    const ast = textParser(OPAQUE_FIXTURE);
+    assertEqual(ast.mergedProfile.fragments.length, 1);
+    const root = ast.mergedProfile.fragments[0].pipelines[0].operators;
+    assertEqual(root.attrs.get('ExecTime'), 'avg 1us, max 1us, min 1us');
+  });
+});
