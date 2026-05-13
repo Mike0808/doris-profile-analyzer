@@ -127,3 +127,15 @@ nav.tabs button.tab.active {
   overflow-x: auto;
 }
 .raw-view .body .line { display: block; }
+
+.raw-view .gutter .fold {
+  display: inline-block;
+  width: 1em;
+  cursor: pointer;
+  color: var(--nord3);
+}
+.raw-view .gutter .fold.collapsed { color: var(--nord13); }
+.raw-view .gutter .fold.leaf      { visibility: hidden; }
+.raw-view .body .line.hidden      { display: none; }
+.raw-view .gutter .gutter-row { display: block; white-space: pre; }
+.raw-view .gutter .gutter-row .line-num { color: var(--nord3); }
