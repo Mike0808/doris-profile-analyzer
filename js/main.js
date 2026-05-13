@@ -59,19 +59,34 @@ fileInput.addEventListener('change', () => {
   if (fileInput.files.length) loadFile(fileInput.files[0]);
 });
 
-window.addEventListener('dragover', (e) => {
+// Drag counter pattern: dragenter/dragleave fire between sibling elements during
+// a drag, so tracking a counter is the only reliable way to know when the cursor
+// has truly left the window.
+let dragCounter = 0;
+window.addEventListener('dragenter', (e) => {
   e.preventDefault();
+  dragCounter++;
   overlay.classList.add('visible');
 });
+window.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+});
 window.addEventListener('dragleave', (e) => {
-  if (e.target === overlay || e.relatedTarget === null) {
+  e.preventDefault();
+  dragCounter--;
+  if (dragCounter <= 0) {
+    dragCounter = 0;
     overlay.classList.remove('visible');
   }
 });
 window.addEventListener('drop', (e) => {
   e.preventDefault();
+  dragCounter = 0;
   overlay.classList.remove('visible');
-  if (e.dataTransfer.files.length) loadFile(e.dataTransfer.files[0]);
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+    loadFile(e.dataTransfer.files[0]);
+  }
 });
 
 async function loadFile(file) {
