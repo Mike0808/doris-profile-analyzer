@@ -3,6 +3,7 @@ import { collectScans } from '../parser/operators/olapScan.js';
 import { formatNs, formatBytes, formatRows, formatPct } from '../util/format.js';
 
 const COLUMNS = [
+  { key: 'expander',      label: '',            align: 'left'  },
   { key: 'table',         label: 'Table',       align: 'left'  },
   { key: 'partTab',       label: 'Part/Tab',    align: 'left'  },
   { key: 'cardinality',   label: 'Cardinality', align: 'right' },
@@ -90,12 +91,17 @@ export function renderScanSummary(container, ast) {
 
   let sortKey = 'execTime';
   let sortDir = 'desc';
+  const expanded = new Set();
 
   function render() {
     const sorted = sortRows(allRows, sortKey, sortDir);
     const table = el('div', { class: 'scan-summary-table' });
 
     for (const col of COLUMNS) {
+      if (col.key === 'expander') {
+        table.appendChild(el('div', { class: 'header' }, ''));
+        continue;
+      }
       const isActive = col.key === sortKey;
       const cls = 'header sortable' + (col.align === 'right' ? ' numeric' : '') + (isActive ? ' active' : '');
       const h = el('div', { class: cls }, [
@@ -112,6 +118,16 @@ export function renderScanSummary(container, ast) {
     }
 
     for (const row of sorted) {
+      const rowKey = `${row.fragmentId}-${row.operatorId}`;
+      const isExpanded = expanded.has(rowKey);
+      const expCell = el('div', { class: 'cell expander' }, isExpanded ? '▾' : '▸');
+      expCell.addEventListener('click', () => {
+        if (isExpanded) expanded.delete(rowKey);
+        else expanded.add(rowKey);
+        wrap.removeChild(table);
+        render();
+      });
+      table.appendChild(expCell);
       table.appendChild(renderCell(row.table ?? '—', 'left'));
       table.appendChild(renderCell(partTabString(row), 'left'));
       table.appendChild(renderCell(formatRows(row.cardinality), 'right'));
@@ -121,10 +137,97 @@ export function renderScanSummary(container, ast) {
       table.appendChild(renderCell(execTimeRange(row.merged), 'right'));
       table.appendChild(el('div', { class: 'cell numeric' + skewClass(row) }, skewText(row)));
       table.appendChild(renderCell(formatBytes(row.memoryPeakMergedMax), 'right'));
+
+      if (isExpanded) {
+        table.appendChild(renderExpandedPanel(row));
+      }
     }
     wrap.appendChild(table);
   }
 
   render();
   container.appendChild(wrap);
+}
+
+function renderExpandedPanel(row) {
+  const panel = el('div', { class: 'expanded' });
+
+  // PlanInfo dump.
+  const planInfoLines = [];
+  for (const [k, v] of row.merged.raw.attrs) {
+    if (k.startsWith('PlanInfo.') || k === 'PlanInfo') {
+      planInfoLines.push(`${k}: ${v}`);
+    }
+  }
+  if (planInfoLines.length > 0) {
+    panel.appendChild(el('h3', {}, 'PlanInfo'));
+    panel.appendChild(el('div', { class: 'planinfo' }, planInfoLines.join('\n')));
+  }
+
+  if (row.instances.length === 0) {
+    panel.appendChild(el('div', { class: 'empty-state' }, 'Per-instance details unavailable.'));
+    return panel;
+  }
+
+  // Per-instance table.
+  panel.appendChild(el('h3', {}, `Per-instance (${row.instances.length} tasks)`));
+  const instTable = el('table');
+  const head = el('tr', {}, [
+    el('th', {}, 'Host'),
+    el('th', {}, 'ExecTime'),
+    el('th', {}, 'Rows Read'),
+    el('th', {}, 'Scanners'),
+    el('th', {}, 'Mem Peak'),
+  ]);
+  instTable.appendChild(head);
+  for (const inst of row.instances) {
+    instTable.appendChild(el('tr', {}, [
+      el('td', {}, inst.host ?? '—'),
+      el('td', {}, formatNs(inst.execTime_ns)),
+      el('td', {}, formatRows(inst.rowsRead)),
+      el('td', {}, String(inst.numScanners ?? '—')),
+      el('td', {}, formatBytes(inst.memoryUsagePeak)),
+    ]));
+  }
+  panel.appendChild(instTable);
+
+  // Filter breakdown.
+  panel.appendChild(el('h3', {}, 'Filter breakdown'));
+  const filters = [
+    ['BloomFilter',   row.rowsBloomFilterFilteredSum],
+    ['ZoneMap',       row.rowsZoneMapRuntimePredicateFilteredSum],
+    ['ShortCircuit',  row.rowsShortCircuitPredFilteredSum],
+    ['BitmapIndex',   row.rowsBitmapIndexFilteredSum],
+    ['InvertedIndex', row.rowsInvertedIndexFilteredSum],
+  ];
+  const fTable = el('table');
+  fTable.appendChild(el('tr', {}, [el('th', {}, 'Filter'), el('th', {}, 'Rows filtered')]));
+  for (const [name, cnt] of filters) {
+    fTable.appendChild(el('tr', {}, [el('td', {}, name), el('td', {}, formatRows(cnt))]));
+  }
+  panel.appendChild(fTable);
+
+  // Per-scanner skew.
+  const allTimes = [];
+  for (const inst of row.instances) {
+    if (Array.isArray(inst.perScannerRunningTime_ns)) {
+      allTimes.push(...inst.perScannerRunningTime_ns.filter(t => t !== null));
+    }
+  }
+  if (allTimes.length >= 2) {
+    panel.appendChild(el('h3', {}, `Per-scanner skew (${allTimes.length} scanners)`));
+    const sortedTimes = [...allTimes].sort((a, b) => a - b);
+    const min = sortedTimes[0];
+    const max = sortedTimes[sortedTimes.length - 1];
+    const median = sortedTimes[Math.floor(sortedTimes.length / 2)];
+    const ratio = min > 0 ? max / min : null;
+    panel.appendChild(el('div', { class: 'scanner-skew' }, [
+      el('span', {}, [el('span', { class: 'label' }, 'min: '), formatNs(min)]),
+      el('span', {}, [el('span', { class: 'label' }, 'median: '), formatNs(median)]),
+      el('span', {}, [el('span', { class: 'label' }, 'max: '), formatNs(max)]),
+      el('span', {}, [el('span', { class: 'label' }, 'ratio: '), ratio ? `${ratio.toFixed(1)}×` : '—']),
+    ]));
+  }
+
+  return panel;
 }
