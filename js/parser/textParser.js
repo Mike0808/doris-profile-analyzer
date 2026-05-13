@@ -15,6 +15,7 @@ const RE_COUNTER_NOVAL = /^(\s*)-\s+([^:]+?)\s*$/;       // '- PlanInfo' (no val
 const RE_FRAGMENT        = /^\s+Fragment\s+(\d+)\s*:\s*$/;
 const RE_PIPELINE_MERGED = /^\s+Pipeline\s*:\s*(\d+)\s*\(instance_num=(\d+)\)\s*:\s*$/;
 const RE_OPERATOR        = /^(\s*)([A-Z_]+_OPERATOR)\b.*?\(id=(-?\d+)[^\n]*\)\s*:\s*$/;
+const RE_OPERATOR_PERHOST = /^(\s*)([A-Z_]+_OPERATOR)\b.*?\(id=(-?\d+)[^)]*\):\(ExecTime:\s+([^)]+)\)/;
 
 // perHost section regexes
 // Doris 3.x: https://doris.apache.org/docs/3.x/query-acceleration/tuning/profiling-tools/
@@ -280,7 +281,36 @@ export function textParser(input) {
         continue;
       }
 
-      // Operators and counters handled in subsequent tasks (5, 6, 7).
+      const om = RE_OPERATOR_PERHOST.exec(line);
+      if (om && perHostState.currentTask) {
+        const indent = om[1].length;
+        const op = createOperator({
+          name: om[2],
+          rawHeader: line.trim(),
+          id: parseInt(om[3], 10),
+          startLine: i,
+        });
+        op.attrs.set('ExecTime', om[4]);
+        while (opStack.length && opStack[opStack.length - 1].indent >= indent) {
+          opStack.pop();
+        }
+        if (opStack.length === 0) {
+          if (perHostState.currentTask.operators === null) {
+            perHostState.currentTask.operators = op;
+          } else {
+            ast.warnings.push({
+              line: i,
+              message: `PipelineTask ${perHostState.currentTask.index} already has a root operator; ignoring ${op.name}`,
+            });
+          }
+        } else {
+          opStack[opStack.length - 1].node.children.push(op);
+        }
+        opStack.push({ indent, node: op });
+        continue;
+      }
+
+      // Counters and named blocks handled in subsequent tasks (6, 7).
     }
 
     // Fall-through: if an opaque block is active, append; otherwise silently drop.

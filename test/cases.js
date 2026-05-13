@@ -798,3 +798,51 @@ suite('textParser — perHost skeleton', () => {
     assertEqual(ast.mergedProfile.fragments.length, 1);
   });
 });
+
+// ── textParser — perHost operators (Task 5) ───────────────────────────────────
+
+const PERHOST_OP_FIXTURE = `Summary:
+   - Profile ID: x
+Execution Profile abc-123:
+  Fragments:
+    Fragment 0:
+      Pipeline :0  (host=TNetworkAddress(hostname:10.0.0.1, port:9050)):
+        PipelineTask (index=0):(ExecTime: 679.83us)
+          RESULT_SINK_OPERATOR (id=0):(ExecTime: 114.905us)
+            EXCHANGE_OPERATOR (id=4):(ExecTime: 98.403us)
+        PipelineTask (index=1):(ExecTime: 200us)
+          DATA_STREAM_SINK_OPERATOR (id=4,dst_id=4):(ExecTime: 50us)
+            OLAP_SCAN_OPERATOR (id=0):(ExecTime: 30us)
+`;
+
+suite('textParser — perHost operators', () => {
+  test('Two PipelineTasks have their own operator trees', () => {
+    const ast = textParser(PERHOST_OP_FIXTURE);
+    const tasks = ast.perHost.fragments[0].pipelines[0].tasks;
+    assertEqual(tasks.length, 2);
+    assertTrue(tasks[0].operators !== null);
+    assertTrue(tasks[1].operators !== null);
+    assertEqual(tasks[0].operators.name, 'RESULT_SINK_OPERATOR');
+    assertEqual(tasks[1].operators.name, 'DATA_STREAM_SINK_OPERATOR');
+  });
+  test('Operator tree depth correct', () => {
+    const ast = textParser(PERHOST_OP_FIXTURE);
+    const root0 = ast.perHost.fragments[0].pipelines[0].tasks[0].operators;
+    assertEqual(root0.children.length, 1);
+    assertEqual(root0.children[0].name, 'EXCHANGE_OPERATOR');
+    const root1 = ast.perHost.fragments[0].pipelines[0].tasks[1].operators;
+    assertEqual(root1.children[0].name, 'OLAP_SCAN_OPERATOR');
+  });
+  test('Inline ExecTime captured in attrs', () => {
+    const ast = textParser(PERHOST_OP_FIXTURE);
+    const root = ast.perHost.fragments[0].pipelines[0].tasks[0].operators;
+    assertEqual(root.attrs.get('ExecTime'), '114.905us');
+    assertEqual(root.children[0].attrs.get('ExecTime'), '98.403us');
+  });
+  test('OLAP_SCAN with same id as merged is fine (no cross-pollution)', () => {
+    const ast = textParser(PERHOST_OP_FIXTURE);
+    const leaf = ast.perHost.fragments[0].pipelines[0].tasks[1].operators.children[0];
+    assertEqual(leaf.id, 0);
+    assertEqual(leaf.name, 'OLAP_SCAN_OPERATOR');
+  });
+});
