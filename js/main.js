@@ -1,5 +1,6 @@
 import { runPipeline } from './parser/textParser.js';
 import { el, clear } from './util/dom.js';
+import { renderRaw } from './render/raw.js';
 
 const openBtn   = document.getElementById('open-btn');
 const fileInput = document.getElementById('file-input');
@@ -71,7 +72,4 @@ async function loadFile(file) {
   renderActive();
 }
 
-// Register a placeholder Raw tab (real renderer wired up in Task 16).
-registerTab('Raw', (container) => {
-  container.appendChild(el('div', { class: 'empty-state' }, '(Raw renderer placeholder)'));
-});
+registerTab('Raw', renderRaw);

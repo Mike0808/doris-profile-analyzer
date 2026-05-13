@@ -104,3 +104,26 @@ nav.tabs button.tab.active {
   text-align: center;
   color: var(--nord3);
 }
+
+.raw-view {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.raw-view .gutter {
+  background: var(--nord1);
+  color: var(--nord3);
+  text-align: right;
+  user-select: none;
+  padding: 0.25em 0.75em;
+  border-right: 1px solid var(--nord3);
+  white-space: pre;
+}
+.raw-view .body {
+  padding: 0.25em 0.75em;
+  white-space: pre;
+  overflow-x: auto;
+}
+.raw-view .body .line { display: block; }
