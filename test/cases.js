@@ -100,3 +100,57 @@ suite('jsonParser.unwrapJson', () => {
     assertContains(r.reason, 'JSON');
   });
 });
+
+import { textParser } from '../js/parser/textParser.js';
+
+const SUMMARY_FIXTURE = `Summary:
+   - Profile ID: abc-123
+   - Task Type: QUERY
+   - Total: 105ms
+   - Sql Statement: SELECT * FROM lineitem
+WHERE l_shipdate < '1998-12-01'
+LIMIT 10
+   - Distributed Plan: N/A
+Execution Summary:
+   - Plan Time: 9ms
+     - Nereids Analysis Time: 4ms
+     - Nereids Rewrite Time: 1ms
+       - Nereids Fold Const By BE Time: 0ms
+   - Schedule Time: 7ms
+`;
+
+suite('textParser — Summary + Execution Summary', () => {
+  test('Top-level Summary keys', () => {
+    const ast = textParser(SUMMARY_FIXTURE);
+    assertEqual(ast.summary.get('Profile ID'), 'abc-123');
+    assertEqual(ast.summary.get('Task Type'), 'QUERY');
+    assertEqual(ast.summary.get('Total'), '105ms');
+    assertEqual(ast.summary.get('Distributed Plan'), 'N/A');
+  });
+
+  test('Multi-line Sql Statement preserves continuation lines', () => {
+    const ast = textParser(SUMMARY_FIXTURE);
+    const sql = ast.summary.get('Sql Statement');
+    assertContains(sql, "SELECT * FROM lineitem");
+    assertContains(sql, "WHERE l_shipdate < '1998-12-01'");
+    assertContains(sql, "LIMIT 10");
+  });
+
+  test('Execution Summary nested counters use dotted paths', () => {
+    const ast = textParser(SUMMARY_FIXTURE);
+    assertEqual(ast.executionSummary.get('Plan Time'), '9ms');
+    assertEqual(ast.executionSummary.get('Plan Time.Nereids Analysis Time'), '4ms');
+    assertEqual(ast.executionSummary.get('Plan Time.Nereids Rewrite Time'), '1ms');
+    assertEqual(
+      ast.executionSummary.get('Plan Time.Nereids Rewrite Time.Nereids Fold Const By BE Time'),
+      '0ms',
+    );
+    assertEqual(ast.executionSummary.get('Schedule Time'), '7ms');
+  });
+
+  test('Parser does not throw on empty input', () => {
+    const ast = textParser('');
+    assertEqual(ast.summary.size, 0);
+    assertEqual(ast.executionSummary.size, 0);
+  });
+});
