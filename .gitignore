@@ -12,3 +12,8 @@ __pycache__/
 
 # Logs (none expected, but defensive)
 *.log
+
+# Private — never commit
+CLAUDE.md
+docs/superpowers/
+.claude/commands/
