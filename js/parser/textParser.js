@@ -15,7 +15,11 @@ const RE_COUNTER_NOVAL = /^(\s*)-\s+([^:]+?)\s*$/;       // '- PlanInfo' (no val
 const RE_FRAGMENT        = /^\s+Fragment\s+(\d+)\s*:\s*$/;
 const RE_PIPELINE_MERGED = /^\s+Pipeline\s*:\s*(\d+)\s*\(instance_num=(\d+)\)\s*:\s*$/;
 const RE_OPERATOR        = /^(\s*)([A-Z_]+_OPERATOR)\b.*?\(id=(-?\d+)[^\n]*\)\s*:\s*$/;
-const RE_OPERATOR_PERHOST = /^(\s*)([A-Z_]+_OPERATOR)\b.*?\(id=(-?\d+)[^)]*\):\(ExecTime:\s+([^)]+)\)/;
+// NOTE: table name includes nested parens: "lineitem(lineitem)" → use .*? instead of [^)]* so
+// the regex can skip the inner ")" and land on the outer "):(ExecTime:".
+// e.g. OLAP_SCAN_OPERATOR (id=0. nereids_id=209. table name = lineitem(lineitem)):(ExecTime: …)
+// Doris 3.x: https://doris.apache.org/docs/3.x/query-acceleration/tuning/profiling-tools/
+const RE_OPERATOR_PERHOST = /^(\s*)([A-Z_]+_OPERATOR)\b.*?\(id=(-?\d+).*?\):\(ExecTime:\s+([^)]+)\)/;
 const RE_NAMED_BLOCK_PERHOST = /^(\s*)(VScanner|SegmentIterator|IndexFilter)\s*:?\s*$/;
 
 // perHost section regexes
