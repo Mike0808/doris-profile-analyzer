@@ -1909,3 +1909,48 @@ MergedProfile
     assertEqual(w[2], NODE_W);
   });
 });
+
+// ── layout — Task 10: layoutPlan ─────────────────────────────────────────────
+
+import { layoutPlan, NODE_H, V_GAP } from '../js/render/planTree.js';
+
+suite('layout — layoutPlan', () => {
+  test('Single-chain → x identical, y descending by (NODE_H + V_GAP)', () => {
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    const plan = buildPlanTree(ast);
+    const pos = layoutPlan(plan);
+    assertEqual(pos[0].x, pos[1].x);
+    assertEqual(pos[1].x, pos[2].x);
+    assertEqual(pos[1].y - pos[0].y, NODE_H + V_GAP);
+    assertEqual(pos[2].y - pos[1].y, NODE_H + V_GAP);
+  });
+  test('Two-leaf siblings → leaves evenly flank root', () => {
+    const fx = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           HASH_JOIN_OPERATOR (id=0):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+             OLAP_SCAN_OPERATOR (id=1):
+                - ExecTime: avg 1ms, max 1ms, min 1ms
+             OLAP_SCAN_OPERATOR (id=2):
+                - ExecTime: avg 1ms, max 1ms, min 1ms
+`;
+    const ast = textParser(fx);
+    const plan = buildPlanTree(ast);
+    const pos = layoutPlan(plan);
+    assertEqual(pos[2].x - pos[1].x, NODE_W + H_GAP);
+    assertEqual(pos[0].x, (pos[1].x + pos[2].x) / 2);
+    assertEqual(pos[1].y, pos[2].y);
+  });
+  test('Stitched 2 fragments → peer y = exchange.y + (NODE_H + V_GAP)', () => {
+    const ast = textParser(TWO_FRAGMENT_STITCH_FIXTURE);
+    const plan = buildPlanTree(ast);
+    const pos = layoutPlan(plan);
+    const exch = plan.nodes.find(n => n.name === 'EXCHANGE_OPERATOR');
+    const sink = plan.nodes.find(n => n.name === 'DATA_STREAM_SINK_OPERATOR');
+    assertEqual(pos[sink.idx].y - pos[exch.idx].y, NODE_H + V_GAP);
+  });
+});
