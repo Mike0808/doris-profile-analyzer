@@ -2049,3 +2049,22 @@ suite('layout — real samples reach every node', () => {
     });
   }
 });
+
+import { renderPlanTree } from '../js/render/planTree.js';
+
+suite('renderPlanTree — empty + structure smoke', () => {
+  test('Empty AST renders empty state', () => {
+    const container = document.createElement('div');
+    const fakeAst = { mergedProfile: { fragments: [] }, perHost: { fragments: [] } };
+    renderPlanTree(container, fakeAst);
+    assertContains(container.innerHTML, 'No operators');
+  });
+  test('Non-empty AST renders outer SVG + viewport', () => {
+    const container = document.createElement('div');
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    renderPlanTree(container, ast);
+    assertTrue(container.querySelector('svg.plan-tree-svg') !== null);
+    assertTrue(container.querySelector('g.viewport') !== null);
+    assertTrue(container.querySelector('.plan-tree-controls') !== null);
+  });
+});

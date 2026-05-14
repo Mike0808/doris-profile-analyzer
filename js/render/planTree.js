@@ -1,6 +1,10 @@
 // Plan Tree renderer. Layout + SVG + pan/zoom + detail panel.
 // Doris 3.x: https://doris.apache.org/docs/3.x/query-acceleration/tuning/profiling-tools/
 
+import { el, clear } from '../util/dom.js';
+import { buildPlanTree } from '../parser/planTree.js';
+import { formatNs } from '../util/format.js';
+
 export const NODE_W = 160;
 export const NODE_H = 56;
 export const H_GAP = 24;
@@ -188,4 +192,70 @@ export function layoutPlan(plan) {
   }
 
   return pos;
+}
+
+// ── SVG factory ───────────────────────────────────────────────────────────────
+// HTML's createElement won't produce SVG nodes; SVG requires the SVG namespace.
+
+function svgEl(tag, attrs = {}, children = []) {
+  const node = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') node.setAttribute('class', v);
+    else if (k.startsWith('on') && typeof v === 'function') {
+      node.addEventListener(k.slice(2).toLowerCase(), v);
+    } else {
+      node.setAttribute(k, String(v));
+    }
+  }
+  for (const c of [].concat(children)) {
+    if (c == null) continue;
+    if (typeof c === 'string') node.appendChild(document.createTextNode(c));
+    else node.appendChild(c);
+  }
+  return node;
+}
+
+// ── Top-level renderer ────────────────────────────────────────────────────────
+
+export function renderPlanTree(container, ast) {
+  const plan = buildPlanTree(ast);
+  if (plan.nodes.length === 0) {
+    container.appendChild(el('div', { class: 'empty-state' }, 'No operators in this profile.'));
+    return;
+  }
+
+  const wrap = el('div', { class: 'plan-tree-wrap' });
+  const controls = el('div', { class: 'plan-tree-controls' }, [
+    el('button', { class: 'zoom-in' }, '+'),
+    el('button', { class: 'zoom-out' }, '−'),
+    el('button', { class: 'fit' }, 'Fit'),
+    el('span', { class: 'zoom-pct' }, '100%'),
+  ]);
+  const svg = svgEl('svg', { class: 'plan-tree-svg' });
+  const viewport = svgEl('g', { class: 'viewport' });
+  const edges = svgEl('g', { class: 'edges' });
+  const nodesG = svgEl('g', { class: 'nodes' });
+  viewport.appendChild(edges);
+  viewport.appendChild(nodesG);
+  svg.appendChild(viewport);
+  const panel = el('aside', { class: 'plan-tree-detail' });
+
+  wrap.appendChild(controls);
+  wrap.appendChild(svg);
+  wrap.appendChild(panel);
+  container.appendChild(wrap);
+
+  renderNodesAndEdges(plan, nodesG, edges);
+  attachPanZoom(svg, viewport, controls, plan);
+  attachDetailPanel(wrap, nodesG, plan);
+}
+
+function renderNodesAndEdges(/* plan, nodesG, edges */) {
+  // Filled in Task 12-13.
+}
+function attachPanZoom(/* svg, viewport, controls, plan */) {
+  // Filled in Task 14.
+}
+function attachDetailPanel(/* wrap, nodesG, plan */) {
+  // Filled in Task 15.
 }
