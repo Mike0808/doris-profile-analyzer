@@ -1263,3 +1263,208 @@ suite('renderScanSummary — smoke', () => {
     assertContains(container.innerHTML, 'No OLAP scan operators');
   });
 });
+
+// ── typeHashJoin / typeHashJoinSink — unit tests ──────────────────────────────
+
+import { typeHashJoin, typeHashJoinSink, typeHashJoinInstance, typeHashJoinSinkInstance, collectJoins } from '../js/parser/operators/hashJoin.js';
+
+function makeMergedHashJoinNode() {
+  const node = {
+    name: 'HASH_JOIN_OPERATOR',
+    rawHeader: 'HASH_JOIN_OPERATOR (id=5 , nereids_id=960):',
+    id: 5,
+    meta: new Map(), attrs: new Map(),
+    startLine: 0, endLine: 0, children: [],
+  };
+  node.attrs.set('PlanInfo', '');
+  node.attrs.set('PlanInfo.join op', 'INNER JOIN(COLOCATE[])[]');
+  node.attrs.set('PlanInfo.equal join conjunct', '(l_orderkey = o_orderkey)');
+  node.attrs.set('PlanInfo.runtime filters', 'RF002[min_max] <- o_orderkey(218740/262144/1048576)');
+  node.attrs.set('ExecTime', 'avg 497.335us, max 2.24ms, min 289.156us');
+  node.attrs.set('ProjectionTime', 'avg 200.366us, max 1.100ms, min 84.153us');
+  node.attrs.set('InitTime', 'avg 17.993us, max 36.914us, min 10.140us');
+  node.attrs.set('WaitForDependency[HASH_JOIN_OPERATOR_DEPENDENCY]Time', 'avg 0ns, max 0ns, min 0ns');
+  node.attrs.set('ProbeRows', 'sum 30.519K (30519), avg 1.271K (1271), max 1.394K (1394), min 1.114K (1114)');
+  node.attrs.set('RowsProduced', 'sum 30.519K (30519), avg 1.271K (1271), max 1.394K (1394), min 1.114K (1114)');
+  node.attrs.set('BlocksProduced', 'sum 96, avg 4, max 4, min 4');
+  node.attrs.set('MemoryUsagePeak', 'sum 288.00 KB, avg 12.00 KB, max 12.00 KB, min 12.00 KB');
+  return node;
+}
+
+function makeMergedHashJoinSinkNode() {
+  const node = {
+    name: 'HASH_JOIN_SINK_OPERATOR',
+    rawHeader: 'HASH_JOIN_SINK_OPERATOR (id=5 , nereids_id=960):',
+    id: 5,
+    meta: new Map(), attrs: new Map(),
+    startLine: 0, endLine: 0, children: [],
+  };
+  node.attrs.set('ExecTime', 'avg 365.883us, max 545.179us, min 199.384us');
+  node.attrs.set('InitTime', 'avg 25.535us, max 81.292us, min 10.558us');
+  node.attrs.set('InputRows', 'sum 147.126K (147126), avg 6.13K (6130), max 6.198K (6198), min 6.032K (6032)');
+  node.attrs.set('MemoryUsagePeak', 'sum 4.31 MB, avg 183.95 KB, max 184.22 KB, min 183.57 KB');
+  node.attrs.set('MemoryUsageHashTable', 'sum 1.31 MB, avg 55.95 KB, max 56.22 KB, min 55.57 KB');
+  node.attrs.set('MemoryUsageBuildBlocks', 'sum 3.00 MB, avg 128.00 KB, max 128.00 KB, min 128.00 KB');
+  node.attrs.set('WaitForDependency[HASH_JOIN_SINK_OPERATOR_DEPENDENCY]Time', 'avg 0ns, max 0ns, min 0ns');
+  return node;
+}
+
+suite('typeHashJoin (merged probe)', () => {
+  test('parses joinType + COLOCATE distribution from PlanInfo.join op', () => {
+    const t = typeHashJoin(makeMergedHashJoinNode());
+    assertEqual(t.joinType, 'INNER JOIN');
+    assertEqual(t.distribution, 'COLOCATE');
+  });
+  test('parses BROADCAST distribution', () => {
+    const node = makeMergedHashJoinNode();
+    node.attrs.set('PlanInfo.join op', 'LEFT SEMI JOIN(BROADCAST)[]');
+    const t = typeHashJoin(node);
+    assertEqual(t.joinType, 'LEFT SEMI JOIN');
+    assertEqual(t.distribution, 'BROADCAST');
+  });
+  test('extracts equal join conjunct and runtime filters', () => {
+    const t = typeHashJoin(makeMergedHashJoinNode());
+    assertEqual(t.equalJoinConjunct, '(l_orderkey = o_orderkey)');
+    assertContains(t.runtimeFilters, 'RF002');
+  });
+  test('parses time avg/max/min and row sum/avg/max/min', () => {
+    const t = typeHashJoin(makeMergedHashJoinNode());
+    assertEqual(t.execTime.max_ns, 2240000);
+    assertEqual(t.probeRows.sum, 30519);
+    assertEqual(t.rowsProduced.max, 1394);
+  });
+  test('null for missing counters', () => {
+    const node = makeMergedHashJoinNode();
+    node.attrs.delete('PlanInfo.runtime filters');
+    const t = typeHashJoin(node);
+    assertEqual(t.runtimeFilters, null);
+  });
+});
+
+suite('typeHashJoinSink (merged build)', () => {
+  test('parses InputRows + hash table memory', () => {
+    const t = typeHashJoinSink(makeMergedHashJoinSinkNode());
+    assertEqual(t.inputRows.sum, 147126);
+    assertEqual(t.memoryUsageHashTable.sum, 1373635);  // 1.31 MB
+  });
+  test('parses ExecTime', () => {
+    const t = typeHashJoinSink(makeMergedHashJoinSinkNode());
+    assertEqual(t.execTime.max_ns, 545179);
+  });
+});
+
+function makePerHostHashJoinNode() {
+  const node = {
+    name: 'HASH_JOIN_OPERATOR',
+    rawHeader: 'HASH_JOIN_OPERATOR (id=5 , nereids_id=960):(ExecTime: 433.995us)',
+    id: 5,
+    meta: new Map(), attrs: new Map(),
+    startLine: 0, endLine: 0, children: [],
+  };
+  node.attrs.set('ExecTime', '433.995us');
+  node.attrs.set('InitTime', '23.960us');
+  node.attrs.set('InitProbeSideTime', '27.274us');
+  node.attrs.set('ProbeExprCallTime', '1.634us');
+  node.attrs.set('ProbeWhenSearchHashTableTime', '67.340us');
+  node.attrs.set('ProbeRows', '1.225K (1225)');
+  node.attrs.set('RowsProduced', '1.225K (1225)');
+  node.attrs.set('MemoryUsagePeak', '12.00 KB');
+  node.attrs.set('WaitForDependency[HASH_JOIN_OPERATOR_DEPENDENCY]Time', '0ns');
+  return node;
+}
+
+function makePerHostHashJoinSinkNode() {
+  const node = {
+    name: 'HASH_JOIN_SINK_OPERATOR',
+    rawHeader: 'HASH_JOIN_SINK_OPERATOR (id=5 , nereids_id=960):(ExecTime: 320.232us)',
+    id: 5,
+    meta: new Map(), attrs: new Map(),
+    startLine: 0, endLine: 0, children: [],
+  };
+  node.attrs.set('JoinType', 'INNER_JOIN');
+  node.attrs.set('BroadcastJoin', '0');
+  node.attrs.set('BuildShareHashTable', '1');
+  node.attrs.set('ShareHashTableEnabled', '1');
+  node.attrs.set('ExecTime', '320.232us');
+  node.attrs.set('BuildHashTableTime', '144.275us');
+  node.attrs.set('BuildTableInsertTime', '99.411us');
+  node.attrs.set('BuildRuntimeFilterTime', '167.408us');
+  node.attrs.set('BuildExprCallTime', '1.307us');
+  node.attrs.set('InputRows', '6.164K (6164)');
+  node.attrs.set('MemoryUsageHashTable', '56.09 KB');
+  node.attrs.set('MemoryUsagePeak', '184.09 KB');
+  return node;
+}
+
+suite('typeHashJoinInstance / typeHashJoinSinkInstance', () => {
+  test('probe instance: scalar times + rows + memory', () => {
+    const t = typeHashJoinInstance(makePerHostHashJoinNode());
+    assertEqual(t.execTime_ns, 433995);
+    assertEqual(t.probeWhenSearchHashTableTime_ns, 67340);
+    assertEqual(t.probeRows, 1225);
+    assertEqual(t.memoryUsagePeak, 12288);
+  });
+  test('sink instance: build metadata + build-phase times', () => {
+    const t = typeHashJoinSinkInstance(makePerHostHashJoinSinkNode());
+    assertEqual(t.joinType, 'INNER_JOIN');
+    assertEqual(t.broadcastJoin, '0');
+    assertEqual(t.buildHashTableTime_ns, 144275);
+    assertEqual(t.buildRuntimeFilterTime_ns, 167408);
+    assertEqual(t.inputRows, 6164);
+    assertEqual(t.memoryUsageHashTable, 57436); // 56.09 KB
+  });
+});
+
+// ── collectJoins — real-sample integration ────────────────────────────────────
+
+suite('collectJoins — real samples', () => {
+  test('count_lineitem has 0 hash joins', async () => {
+    const raw = await (await fetch('../samples/tpch/count_lineitem.txt')).text();
+    const r = runPipeline(raw);
+    assertEqual(collectJoins(r.ast).length, 0);
+  });
+  test('tpch_q1 has 0 hash joins', async () => {
+    const raw = await (await fetch('../samples/tpch/tpch_q1.txt')).text();
+    const r = runPipeline(raw);
+    assertEqual(collectJoins(r.ast).length, 0);
+  });
+  test('tpch_q3 has 2 hash joins (COLOCATE l⋈o + BROADCAST o⋈c)', async () => {
+    const raw = await (await fetch('../samples/tpch/tpch_q3.txt')).text();
+    const r = runPipeline(raw);
+    const rows = collectJoins(r.ast);
+    assertEqual(rows.length, 2);
+    const distribs = rows.map(x => x.distribution).sort();
+    assertEqual(distribs, ['BROADCAST', 'COLOCATE']);
+  });
+  test('tpch_q3 join rows have paired probe + sink with 24 instances each', async () => {
+    const raw = await (await fetch('../samples/tpch/tpch_q3.txt')).text();
+    const r = runPipeline(raw);
+    const rows = collectJoins(r.ast);
+    for (const row of rows) {
+      assertEqual(row.joinType, 'INNER JOIN');
+      assertTrue(row.probeInstances.length === 24, `probeInstances=${row.probeInstances.length}`);
+      assertTrue(row.sinkInstances.length === 24, `sinkInstances=${row.sinkInstances.length}`);
+      assertTrue(row.buildHashTableTimeMax_ns !== null);
+      assertTrue(row.hashTableMemSum !== null);
+    }
+  });
+  test('tpch_q3 JSON ≡ text: same row count and distributions', async () => {
+    const t = runPipeline(await (await fetch('../samples/tpch/tpch_q3.txt')).text());
+    const j = runPipeline(await (await fetch('../samples/tpch/tpch_q3.json')).text());
+    const tRows = collectJoins(t.ast);
+    const jRows = collectJoins(j.ast);
+    assertEqual(tRows.length, jRows.length);
+    assertEqual(tRows.map(x => x.distribution).sort(), jRows.map(x => x.distribution).sort());
+  });
+});
+
+import { renderJoinSummary } from '../js/render/joinSummary.js';
+
+suite('renderJoinSummary — smoke', () => {
+  test('Empty AST renders empty state', () => {
+    const container = document.createElement('div');
+    const fakeAst = { mergedProfile: { fragments: [] }, perHost: { fragments: [] } };
+    renderJoinSummary(container, fakeAst);
+    assertContains(container.innerHTML, 'No hash join operators');
+  });
+});
