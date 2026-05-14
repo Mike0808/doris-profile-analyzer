@@ -2069,6 +2069,46 @@ suite('renderPlanTree — empty + structure smoke', () => {
   });
 });
 
+suite('renderPlanTree — detail panel', () => {
+  test('Clicking a node adds .selected and opens panel', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    renderPlanTree(container, ast);
+    const firstNode = container.querySelector('g.node');
+    firstNode.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    assertTrue(firstNode.classList.contains('selected'));
+    const panel = container.querySelector('.plan-tree-detail');
+    assertTrue(panel.classList.contains('visible'));
+    document.body.removeChild(container);
+  });
+  test('Panel contains operator name + at least one PlanInfo or counter row', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    renderPlanTree(container, ast);
+    container.querySelector('g.node[data-op-name="OLAP_SCAN_OPERATOR"]')
+      .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    const panel = container.querySelector('.plan-tree-detail');
+    assertContains(panel.innerHTML, 'OLAP_SCAN_OPERATOR');
+    assertContains(panel.innerHTML, 'ExecTime');
+    document.body.removeChild(container);
+  });
+  test('Pressing Esc deselects and closes the panel', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    renderPlanTree(container, ast);
+    const firstNode = container.querySelector('g.node');
+    firstNode.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    assertTrue(!firstNode.classList.contains('selected'));
+    const panel = container.querySelector('.plan-tree-detail');
+    assertTrue(!panel.classList.contains('visible'));
+    document.body.removeChild(container);
+  });
+});
+
 suite('renderPlanTree — pan/zoom', () => {
   test('Initial render runs Fit (viewport transform is non-identity)', () => {
     const container = document.createElement('div');

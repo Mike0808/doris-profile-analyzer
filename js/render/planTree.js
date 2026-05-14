@@ -412,6 +412,93 @@ function attachPanZoom(svg, viewport, controls, plan) {
   requestAnimationFrame(fit);
   applyView();
 }
-function attachDetailPanel(/* wrap, nodesG, plan */) {
-  // Filled in Task 15.
+function attachDetailPanel(wrap, nodesG, plan) {
+  const panel = wrap.querySelector('.plan-tree-detail');
+  let selectedIdx = null;
+
+  function close() {
+    if (selectedIdx !== null) {
+      const g = nodesG.querySelector(`g.node[data-idx="${selectedIdx}"]`);
+      if (g) g.classList.remove('selected');
+    }
+    selectedIdx = null;
+    panel.classList.remove('visible');
+  }
+
+  function open(idx) {
+    if (selectedIdx === idx) return;
+    if (selectedIdx !== null) {
+      const prev = nodesG.querySelector(`g.node[data-idx="${selectedIdx}"]`);
+      if (prev) prev.classList.remove('selected');
+    }
+    const g = nodesG.querySelector(`g.node[data-idx="${idx}"]`);
+    if (g) g.classList.add('selected');
+    selectedIdx = idx;
+    renderPanelContent(plan, idx, panel);
+    panel.classList.add('visible');
+  }
+
+  nodesG.addEventListener('click', (e) => {
+    const g = e.target.closest('g.node');
+    if (!g) return;
+    open(Number(g.getAttribute('data-idx')));
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close();
+  });
+
+  panel.addEventListener('click', (e) => {
+    if (e.target.classList.contains('close-btn')) close();
+    if (e.target.classList.contains('reveal-btn')) {
+      const peerIdx = Number(e.target.getAttribute('data-peer'));
+      open(peerIdx);
+      const g = nodesG.querySelector(`g.node[data-idx="${peerIdx}"]`);
+      if (g) g.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  });
+}
+
+function renderPanelContent(plan, idx, panel) {
+  clear(panel);
+  const node = plan.nodes[idx];
+  panel.appendChild(el('header', {}, [
+    el('div', { class: 'panel-title' }, [
+      el('span', {}, node.name),
+      el('button', { class: 'close-btn', title: 'Close (Esc)' }, '×'),
+    ]),
+    el('div', { class: 'panel-sub' }, `id=${node.opId}  Fragment ${node.fragmentId}`),
+  ]));
+
+  const planInfoLines = [];
+  for (const [k, v] of node.attrsRef) {
+    if (k.startsWith('PlanInfo.') || k === 'PlanInfo') planInfoLines.push(`${k}: ${v}`);
+  }
+  if (planInfoLines.length > 0) {
+    panel.appendChild(el('h3', {}, 'PlanInfo'));
+    panel.appendChild(el('pre', { class: 'planinfo' }, planInfoLines.join('\n')));
+  }
+
+  const counterLines = [];
+  for (const [k, v] of node.attrsRef) {
+    if (k.startsWith('PlanInfo.') || k === 'PlanInfo') continue;
+    counterLines.push(`${k}: ${v}`);
+  }
+  if (counterLines.length > 0) {
+    panel.appendChild(el('h3', {}, 'Counters (merged)'));
+    panel.appendChild(el('pre', { class: 'counters' }, counterLines.join('\n')));
+  }
+
+  if (node.crossFragmentLink && node.crossFragmentLink.peerIdx !== null) {
+    const peer = plan.nodes[node.crossFragmentLink.peerIdx];
+    panel.appendChild(el('h3', {}, 'Cross-fragment link'));
+    panel.appendChild(el('div', { class: 'xfrag-info' }, [
+      el('div', {}, `↓ dst=${node.crossFragmentLink.dstId} → ${peer.name}`),
+      el('div', {}, `in Fragment ${peer.fragmentId}`),
+      el('button', {
+        class: 'reveal-btn',
+        'data-peer': String(peer.idx),
+      }, 'Reveal in tree'),
+    ]));
+  }
 }
