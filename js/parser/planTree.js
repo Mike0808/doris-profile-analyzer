@@ -47,7 +47,7 @@ const SHORT_NAME_MAP = {
 };
 
 export function shortName(name) {
-  if (SHORT_NAME_MAP[name]) return SHORT_NAME_MAP[name];
+  if (SHORT_NAME_MAP[name] !== undefined) return SHORT_NAME_MAP[name];
   return name.endsWith('_OPERATOR') ? name.slice(0, -'_OPERATOR'.length) : name;
 }
 
@@ -61,7 +61,7 @@ export function extractExecTimeMaxNs(attrs) {
   return parsed ? parsed.max_ns : null;
 }
 
-// ── Task 3 + 4 + 5 + 6: buildPlanTree ────────────────────────────────────────
+// ── buildPlanTree ─────────────────────────────────────────────────────────────
 
 /**
  * Walk an OperatorNode tree depth-first, calling visit(node) on each node
@@ -111,6 +111,7 @@ export function buildPlanTree(ast) {
     const fragId = frag.id;
     const parentStack = [];   // [{opNode, idx}]
     let fragRootIdx = null;
+    let maxNs = null;
 
     for (const pipe of frag.pipelines) {
       walkOperators(pipe.operators, (opNode) => {
@@ -143,6 +144,10 @@ export function buildPlanTree(ast) {
 
         nodes.push(node);
 
+        if (node.execTimeMaxNs !== null && node.execTimeMaxNs !== undefined) {
+          if (maxNs === null || node.execTimeMaxNs > maxNs) maxNs = node.execTimeMaxNs;
+        }
+
         if (parentIdx !== null) {
           nodes[parentIdx].childrenIdx.push(idx);
         } else if (fragRootIdx === null) {
@@ -155,14 +160,6 @@ export function buildPlanTree(ast) {
     }
 
     fragmentRoots.push(fragRootIdx);
-
-    // Compute max ExecTime across all operators in this fragment.
-    let maxNs = null;
-    for (const n of nodes) {
-      if (n.fragmentId !== fragId) continue;
-      if (n.execTimeMaxNs === null || n.execTimeMaxNs === undefined) continue;
-      if (maxNs === null || n.execTimeMaxNs > maxNs) maxNs = n.execTimeMaxNs;
-    }
     fragmentMaxExecTime.push(maxNs);
   }
 
@@ -186,7 +183,10 @@ export function buildPlanTree(ast) {
   for (const n of nodes) {
     if (n.name !== 'EXCHANGE_OPERATOR') continue;
     const dstId = extractDstId(n.rawHeader);
-    if (dstId === null) continue;
+    if (dstId === null) {
+      warnings.push({ message: `EXCHANGE_OPERATOR at idx ${n.idx} has no parseable id` });
+      continue;
+    }
     const peerIdx = sinkByDstId.has(dstId) ? sinkByDstId.get(dstId) : null;
     n.crossFragmentLink = { kind: 'exchange', dstId, peerIdx };
     if (peerIdx === null) {

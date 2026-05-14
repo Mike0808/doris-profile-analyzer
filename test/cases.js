@@ -1486,8 +1486,8 @@ suite('planTree — extractDstId', () => {
   test('DATA_STREAM_SINK with whitespace around dst_id', () => {
     assertEqual(extractDstId('DATA_STREAM_SINK_OPERATOR (id=4, dst_id = 7):'), 7);
   });
-  test('Header without dst_id falls back to id=', () => {
-    assertEqual(extractDstId('EXCHANGE_OPERATOR (id=4):'), 4);
+  test('Header without dst_id falls back to id= even with commas before id', () => {
+    assertEqual(extractDstId('SOME_OP (id = 12, foo=3):'), 12);
   });
   test('No id at all returns null', () => {
     assertEqual(extractDstId('SOME_OPERATOR (no ids here):'), null);
@@ -1618,6 +1618,7 @@ MergedProfile
          Pipeline : 0(instance_num=24):
            OLAP_SCAN_OPERATOR (id=10):
               - ExecTime: avg 22ms, max 30ms, min 18ms
+         Pipeline : 1(instance_num=24):
            OLAP_SCAN_OPERATOR (id=11):
               - ExecTime: avg 8ms, max 10ms, min 6ms
 `;
@@ -1762,6 +1763,30 @@ MergedProfile
     const plan = buildPlanTree(ast);
     assertEqual(plan.warnings.length, 1);
     assertContains(plan.warnings[0].message, 'Duplicate');
+  });
+  test('EXCHANGE_OPERATOR with no parseable id emits a warning', () => {
+    // Craft a node manually since textParser would reject this header anyway.
+    const ast = {
+      mergedProfile: {
+        fragments: [{
+          id: 0,
+          pipelines: [{
+            id: 0,
+            operators: {
+              name: 'EXCHANGE_OPERATOR',
+              rawHeader: 'EXCHANGE_OPERATOR (broken header):',
+              id: 5,
+              attrs: new Map(),
+              children: [],
+            },
+          }],
+        }],
+      },
+      perHost: { fragments: [] },
+    };
+    const plan = buildPlanTree(ast);
+    assertTrue(plan.warnings.length >= 1);
+    assertContains(plan.warnings[0].message, 'no parseable id');
   });
 });
 
