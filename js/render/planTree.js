@@ -5,6 +5,10 @@ import { el, clear } from '../util/dom.js';
 import { buildPlanTree } from '../parser/planTree.js';
 import { formatNs } from '../util/format.js';
 
+// Tracks cleanup functions (window/document listeners) keyed by container element.
+// Prevents listener accumulation when renderPlanTree is called again on the same container.
+const cleanupsByContainer = new WeakMap();
+
 export const NODE_W = 160;
 export const NODE_H = 56;
 export const H_GAP = 24;
@@ -218,6 +222,10 @@ function svgEl(tag, attrs = {}, children = []) {
 // ── Top-level renderer ────────────────────────────────────────────────────────
 
 export function renderPlanTree(container, ast) {
+  // Run prior cleanup (window/document listeners from a previous render) if present.
+  const prior = cleanupsByContainer.get(container);
+  if (prior) { prior(); cleanupsByContainer.delete(container); }
+
   const plan = buildPlanTree(ast);
   if (plan.nodes.length === 0) {
     container.appendChild(el('div', { class: 'empty-state' }, 'No operators in this profile.'));
@@ -246,8 +254,12 @@ export function renderPlanTree(container, ast) {
   container.appendChild(wrap);
 
   renderNodesAndEdges(plan, nodesG, edges);
-  attachPanZoom(svg, viewport, controls, plan);
-  attachDetailPanel(wrap, nodesG, plan);
+  const panZoom = attachPanZoom(svg, viewport, controls, plan);
+  const detailPanel = attachDetailPanel(wrap, nodesG, plan, panZoom);
+  cleanupsByContainer.set(container, () => {
+    panZoom.detach();
+    detailPanel.detach();
+  });
 }
 
 function heatClass(ratio) {
@@ -384,17 +396,19 @@ function attachPanZoom(svg, viewport, controls, plan) {
     lastX = e.clientX; lastY = e.clientY;
     svg.classList.add('grabbing');
   });
-  window.addEventListener('mousemove', (e) => {
+  function onWindowMove(e) {
     if (!dragging) return;
     view.tx += (e.clientX - lastX);
     view.ty += (e.clientY - lastY);
     lastX = e.clientX; lastY = e.clientY;
     applyView();
-  });
-  window.addEventListener('mouseup', () => {
+  }
+  function onWindowUp() {
     dragging = false;
     svg.classList.remove('grabbing');
-  });
+  }
+  window.addEventListener('mousemove', onWindowMove);
+  window.addEventListener('mouseup', onWindowUp);
 
   svg.setAttribute('tabindex', '0');
   svg.addEventListener('keydown', (e) => {
@@ -411,8 +425,31 @@ function attachPanZoom(svg, viewport, controls, plan) {
 
   requestAnimationFrame(fit);
   applyView();
+
+  // Fix 1: center the named node in the SVG viewport at the current scale.
+  function revealNode(idx) {
+    const g = viewport.querySelector(`g.node[data-idx="${idx}"]`);
+    if (!g) return;
+    const m = /translate\(([-\d.]+),\s*([-\d.]+)\)/.exec(g.getAttribute('transform') || '');
+    if (!m) return;
+    const nodeX = Number(m[1]) + NODE_W / 2;
+    const nodeY = Number(m[2]) + NODE_H / 2;
+    const rect = svg.getBoundingClientRect();
+    // Center the node at viewport center using the current scale.
+    view.tx = (rect.width / 2) - nodeX * view.scale;
+    view.ty = (rect.height / 2) - nodeY * view.scale;
+    applyView();
+  }
+
+  // Fix 2: remove window listeners when the component is torn down.
+  function detach() {
+    window.removeEventListener('mousemove', onWindowMove);
+    window.removeEventListener('mouseup', onWindowUp);
+  }
+
+  return { revealNode, detach };
 }
-function attachDetailPanel(wrap, nodesG, plan) {
+function attachDetailPanel(wrap, nodesG, plan, panZoom) {
   const panel = wrap.querySelector('.plan-tree-detail');
   let selectedIdx = null;
 
@@ -444,19 +481,26 @@ function attachDetailPanel(wrap, nodesG, plan) {
     open(Number(g.getAttribute('data-idx')));
   });
 
-  document.addEventListener('keydown', (e) => {
+  // Fix 2: named handler so it can be removed on teardown.
+  function onDocKeydown(e) {
     if (e.key === 'Escape') close();
-  });
+  }
+  document.addEventListener('keydown', onDocKeydown);
 
   panel.addEventListener('click', (e) => {
     if (e.target.classList.contains('close-btn')) close();
+    // Fix 1: use panZoom.revealNode instead of scrollIntoView on SVG element.
     if (e.target.classList.contains('reveal-btn')) {
       const peerIdx = Number(e.target.getAttribute('data-peer'));
       open(peerIdx);
-      const g = nodesG.querySelector(`g.node[data-idx="${peerIdx}"]`);
-      if (g) g.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      panZoom.revealNode(peerIdx);
     }
   });
+
+  // Fix 2: remove document listener when the component is torn down.
+  return {
+    detach() { document.removeEventListener('keydown', onDocKeydown); },
+  };
 }
 
 function renderPanelContent(plan, idx, panel) {

@@ -2067,9 +2067,64 @@ suite('renderPlanTree — empty + structure smoke', () => {
     assertTrue(container.querySelector('g.viewport') !== null);
     assertTrue(container.querySelector('.plan-tree-controls') !== null);
   });
+  test('Re-rendering into the same container does not stack window listeners', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+
+    // Spy on window listener counts via a local wrapper.
+    let movesBefore = 0;
+    const origAdd = window.addEventListener;
+    const origRem = window.removeEventListener;
+    window.addEventListener = function(t, ...rest) {
+      if (t === 'mousemove' || t === 'mouseup') movesBefore++;
+      return origAdd.call(this, t, ...rest);
+    };
+    window.removeEventListener = function(t, ...rest) {
+      if (t === 'mousemove' || t === 'mouseup') movesBefore--;
+      return origRem.call(this, t, ...rest);
+    };
+
+    renderPlanTree(container, ast);
+    const afterFirst = movesBefore;
+    // Clear and re-render — must remove old listeners before adding new ones.
+    while (container.firstChild) container.removeChild(container.firstChild);
+    renderPlanTree(container, ast);
+    const afterSecond = movesBefore;
+
+    window.addEventListener = origAdd;
+    window.removeEventListener = origRem;
+    document.body.removeChild(container);
+
+    assertEqual(afterFirst, afterSecond);  // net 0 listener growth
+  });
 });
 
 suite('renderPlanTree — detail panel', () => {
+  test('Reveal in tree centers the peer node in the viewport', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const ast = textParser(TWO_FRAGMENT_STITCH_FIXTURE);
+    renderPlanTree(container, ast);
+
+    // Click the EXCHANGE node to open its panel.
+    const exch = container.querySelector('g.node[data-op-name="EXCHANGE_OPERATOR"]');
+    exch.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+    // Capture the viewport transform before reveal.
+    const viewport = container.querySelector('g.viewport');
+    const before = viewport.getAttribute('transform');
+
+    // Click the Reveal button.
+    const reveal = container.querySelector('.reveal-btn');
+    assertTrue(reveal !== null, 'reveal-btn should render for EXCHANGE peer');
+    reveal.click();
+
+    // Viewport transform should have changed (peer is centered).
+    const after = viewport.getAttribute('transform');
+    assertTrue(before !== after, `Viewport did not move on reveal: ${before} → ${after}`);
+    document.body.removeChild(container);
+  });
   test('Clicking a node adds .selected and opens panel', () => {
     const container = document.createElement('div');
     document.body.appendChild(container);
