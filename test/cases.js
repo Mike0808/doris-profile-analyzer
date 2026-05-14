@@ -2068,3 +2068,23 @@ suite('renderPlanTree — empty + structure smoke', () => {
     assertTrue(container.querySelector('.plan-tree-controls') !== null);
   });
 });
+
+suite('renderPlanTree — node cards', () => {
+  test('Renders one <g class="node"> per plan node', () => {
+    const container = document.createElement('div');
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    renderPlanTree(container, ast);
+    const plan = buildPlanTree(ast);
+    const nodeGs = container.querySelectorAll('g.node');
+    assertEqual(nodeGs.length, plan.nodes.length);
+  });
+  test('Hottest operator in fragment has the hot color class', () => {
+    // SINGLE_FRAGMENT_FIXTURE: OLAP_SCAN has max 3ms — fragment max.
+    const container = document.createElement('div');
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    renderPlanTree(container, ast);
+    const hotCard = container.querySelector('g.node[data-op-name="OLAP_SCAN_OPERATOR"] rect.card');
+    assertTrue(hotCard.classList.contains('heat-5'),
+      `Expected heat-5; got ${hotCard.getAttribute('class')}`);
+  });
+});

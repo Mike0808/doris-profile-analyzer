@@ -250,8 +250,45 @@ export function renderPlanTree(container, ast) {
   attachDetailPanel(wrap, nodesG, plan);
 }
 
-function renderNodesAndEdges(/* plan, nodesG, edges */) {
-  // Filled in Task 12-13.
+function heatClass(ratio) {
+  if (ratio === null || Number.isNaN(ratio)) return 'heat-0';
+  if (ratio < 0.10) return 'heat-0';
+  if (ratio < 0.30) return 'heat-1';
+  if (ratio < 0.60) return 'heat-2';
+  if (ratio < 0.85) return 'heat-3';
+  return 'heat-5';
+}
+
+function renderNodesAndEdges(plan, nodesG, edges) {
+  const pos = layoutPlan(plan);
+
+  for (const node of plan.nodes) {
+    const p = pos[node.idx];
+    const fragMax = plan.fragmentMaxExecTime[node.fragmentId];
+    const ratio = (node.execTimeMaxNs !== null && fragMax) ? (node.execTimeMaxNs / fragMax) : null;
+    const heat = heatClass(ratio);
+
+    const g = svgEl('g', {
+      class: 'node',
+      'data-idx': node.idx,
+      'data-op-name': node.name,
+      transform: `translate(${p.x - NODE_W / 2}, ${p.y - NODE_H / 2})`,
+    });
+    g.appendChild(svgEl('rect', {
+      class: `card ${heat}`, x: 0, y: 0, width: NODE_W, height: NODE_H, rx: 6,
+    }));
+    g.appendChild(svgEl('text', { class: 'op-name', x: 8, y: 18 }, node.shortName));
+    g.appendChild(svgEl('text', {
+      class: 'op-id', x: NODE_W - 8, y: 18, 'text-anchor': 'end',
+    }, `#${node.opId}`));
+    g.appendChild(svgEl('text', { class: 'metric', x: 8, y: 38 }, formatNs(node.execTimeMaxNs)));
+    if (ratio !== null) {
+      g.appendChild(svgEl('rect', {
+        class: 'heat-bar', x: 8, y: 44, width: 50 * ratio, height: 4,
+      }));
+    }
+    nodesG.appendChild(g);
+  }
 }
 function attachPanZoom(/* svg, viewport, controls, plan */) {
   // Filled in Task 14.
