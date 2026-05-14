@@ -2069,6 +2069,23 @@ suite('renderPlanTree — empty + structure smoke', () => {
   });
 });
 
+suite('renderPlanTree — edges', () => {
+  test('Intra-fragment edges: one per parent-child pair', () => {
+    const container = document.createElement('div');
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    renderPlanTree(container, ast);
+    const intra = container.querySelectorAll('path.edge:not(.xfrag)');
+    assertEqual(intra.length, 2);   // 3 nodes → 2 parent-child edges
+  });
+  test('Cross-fragment edges have .xfrag class', () => {
+    const container = document.createElement('div');
+    const ast = textParser(TWO_FRAGMENT_STITCH_FIXTURE);
+    renderPlanTree(container, ast);
+    const xfrag = container.querySelectorAll('path.edge.xfrag');
+    assertEqual(xfrag.length, 1);
+  });
+});
+
 suite('renderPlanTree — node cards', () => {
   test('Renders one <g class="node"> per plan node', () => {
     const container = document.createElement('div');

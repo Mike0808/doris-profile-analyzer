@@ -262,6 +262,25 @@ function heatClass(ratio) {
 function renderNodesAndEdges(plan, nodesG, edges) {
   const pos = layoutPlan(plan);
 
+  function edgePath(from, to) {
+    const mid = (from.y + to.y) / 2;
+    return `M ${from.x},${from.y} C ${from.x},${mid} ${to.x},${mid} ${to.x},${to.y}`;
+  }
+  for (const node of plan.nodes) {
+    if (node.parentIdx === null) continue;
+    edges.appendChild(svgEl('path', {
+      class: 'edge',
+      d: edgePath(pos[node.idx], pos[node.parentIdx]),
+    }));
+  }
+  for (const node of plan.nodes) {
+    if (!node.crossFragmentLink || node.crossFragmentLink.peerIdx === null) continue;
+    edges.appendChild(svgEl('path', {
+      class: 'edge xfrag',
+      d: edgePath(pos[node.crossFragmentLink.peerIdx], pos[node.idx]),
+    }));
+  }
+
   for (const node of plan.nodes) {
     const p = pos[node.idx];
     const fragMax = plan.fragmentMaxExecTime[node.fragmentId];
