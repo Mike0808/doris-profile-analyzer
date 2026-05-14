@@ -297,6 +297,130 @@ nav.tabs button.tab.active {
 .join-summary-table .expanded table { border-collapse: collapse; width: 100%; margin-bottom: 0.5em; }
 .join-summary-table .expanded table th,
 .join-summary-table .expanded table td { padding: 0.2em 0.5em; border-bottom: 1px solid var(--nord3); text-align: left; }
+
+/* ── Plan Tree ───────────────────────────────────────────────────────────── */
+.plan-tree-wrap {
+  position: relative;
+  height: calc(100vh - 100px);
+  width: 100%;
+  overflow: hidden;
+  background: var(--nord0);
+}
+.plan-tree-svg {
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  outline: none;
+}
+.plan-tree-svg.grabbing { cursor: grabbing; }
+.plan-tree-svg .viewport { transform-origin: 0 0; }
+
+.plan-tree-svg g.node { cursor: pointer; }
+.plan-tree-svg g.node rect.card {
+  stroke: var(--nord3);
+  stroke-width: 1;
+  fill: var(--nord1);
+}
+.plan-tree-svg g.node rect.card.heat-0 { fill: var(--nord1); }
+.plan-tree-svg g.node rect.card.heat-1 { fill: var(--nord10); }
+.plan-tree-svg g.node rect.card.heat-2 { fill: var(--nord13); }
+.plan-tree-svg g.node rect.card.heat-3 { fill: var(--nord12); }
+.plan-tree-svg g.node rect.card.heat-5 { fill: var(--nord11); }
+.plan-tree-svg g.node.selected rect.card {
+  stroke: var(--nord15);
+  stroke-width: 2;
+}
+.plan-tree-svg g.node text {
+  fill: var(--nord6);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  pointer-events: none;
+}
+.plan-tree-svg g.node text.op-name { font-weight: bold; }
+.plan-tree-svg g.node text.op-id { fill: var(--nord4); font-size: 10px; }
+.plan-tree-svg g.node text.metric { fill: var(--nord5); }
+.plan-tree-svg g.node rect.heat-bar { fill: var(--nord11); opacity: 0.85; pointer-events: none; }
+
+.plan-tree-svg path.edge {
+  stroke: var(--nord3);
+  stroke-width: 1.5;
+  fill: none;
+}
+.plan-tree-svg path.edge.xfrag {
+  stroke: var(--nord15);
+  stroke-dasharray: 6 4;
+}
+
+.plan-tree-controls {
+  position: absolute;
+  top: 0.5em;
+  right: 0.5em;
+  display: flex;
+  gap: 0.4em;
+  align-items: center;
+  background: var(--nord1);
+  padding: 0.3em 0.5em;
+  border: 1px solid var(--nord3);
+  border-radius: 4px;
+  z-index: 2;
+}
+.plan-tree-controls button {
+  background: var(--nord2);
+  color: var(--nord6);
+  border: 1px solid var(--nord3);
+  padding: 0.2em 0.6em;
+  cursor: pointer;
+  font-family: var(--font-mono);
+}
+.plan-tree-controls button:hover { background: var(--nord3); }
+.plan-tree-controls .zoom-pct {
+  color: var(--nord5);
+  font-variant-numeric: tabular-nums;
+  min-width: 3.5em;
+  text-align: right;
+}
+
+.plan-tree-detail {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 380px;
+  height: 100%;
+  background: var(--nord1);
+  border-left: 1px solid var(--nord3);
+  overflow: auto;
+  padding: 0.75em 1em;
+  transform: translateX(100%);
+  transition: transform 200ms ease-out;
+  font-size: 12px;
+  z-index: 1;
+}
+.plan-tree-detail.visible { transform: translateX(0); }
+.plan-tree-detail header { border-bottom: 1px solid var(--nord3); padding-bottom: 0.5em; margin-bottom: 0.5em; }
+.plan-tree-detail .panel-title { display: flex; align-items: center; justify-content: space-between; font-weight: bold; color: var(--nord8); }
+.plan-tree-detail .panel-sub { color: var(--nord4); font-size: 11px; margin-top: 0.2em; }
+.plan-tree-detail h3 { color: var(--nord8); font-size: 1em; margin: 0.75em 0 0.25em; }
+.plan-tree-detail pre {
+  background: var(--nord0);
+  padding: 0.5em;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11px;
+  line-height: 1.4;
+  border-radius: 3px;
+}
+.plan-tree-detail .xfrag-info { display: flex; flex-direction: column; gap: 0.3em; }
+.plan-tree-detail button {
+  background: var(--nord2);
+  color: var(--nord6);
+  border: 1px solid var(--nord3);
+  padding: 0.3em 0.7em;
+  cursor: pointer;
+  font-family: var(--font-mono);
+}
+.plan-tree-detail button:hover { background: var(--nord3); }
+.plan-tree-detail .close-btn { padding: 0 0.5em; line-height: 1.2; }
 .join-summary-table .expanded table th { color: var(--nord8); }
 .join-summary-table .expanded .planinfo { background: var(--nord0); padding: 0.5em; white-space: pre-wrap; }
 .join-summary-table .expanded .time-breakdown { display: flex; gap: 1.5em; align-items: baseline; flex-wrap: wrap; }
