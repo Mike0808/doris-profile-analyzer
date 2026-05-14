@@ -1954,3 +1954,59 @@ MergedProfile
     assertEqual(pos[sink.idx].y - pos[exch.idx].y, NODE_H + V_GAP);
   });
 });
+
+// ── layout — multi-pipeline fragments (Phase 2 fix) ──────────────────────────
+
+const MULTI_PIPELINE_FIXTURE = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           RESULT_SINK_OPERATOR (id=0):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+         Pipeline : 1(instance_num=1):
+           AGGREGATION_OPERATOR (id=10):
+              - ExecTime: avg 2ms, max 2ms, min 2ms
+         Pipeline : 2(instance_num=1):
+           SORT_OPERATOR (id=11):
+              - ExecTime: avg 3ms, max 3ms, min 3ms
+`;
+
+suite('layout — multi-pipeline fragments', () => {
+  test('pipelineRoots records every parentIdx=null node', () => {
+    const ast = textParser(MULTI_PIPELINE_FIXTURE);
+    const plan = buildPlanTree(ast);
+    assertEqual(plan.pipelineRoots.length, 3);
+  });
+  test('layoutPlan places all pipeline roots (all have distinct x)', () => {
+    const ast = textParser(MULTI_PIPELINE_FIXTURE);
+    const plan = buildPlanTree(ast);
+    const pos = layoutPlan(plan);
+    const rootIdxs = plan.pipelineRoots.map(r => r.idx);
+    const xs = rootIdxs.map(i => pos[i].x);
+    const xSet = new Set(xs);
+    assertTrue(xSet.size === 3, `Expected 3 unique x values; got ${xSet.size}: ${xs}`);
+  });
+  test('computeDepths assigns a depth to every node', () => {
+    const ast = textParser(MULTI_PIPELINE_FIXTURE);
+    const plan = buildPlanTree(ast);
+    const depths = computeDepths(plan);
+    for (let i = 0; i < depths.length; i++) {
+      assertTrue(depths[i] !== null, `Node ${i} has null depth`);
+    }
+  });
+});
+
+suite('layout — real samples reach every node', () => {
+  for (const path of SAMPLE_PATHS) {
+    test(`${path} — every node has a depth assigned`, async () => {
+      const raw = await (await fetch(path)).text();
+      const r = runPipeline(raw);
+      const plan = buildPlanTree(r.ast);
+      const depths = computeDepths(plan);
+      const orphans = depths.filter(d => d === null).length;
+      assertEqual(orphans, 0);
+    });
+  }
+});

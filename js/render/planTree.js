@@ -6,15 +6,11 @@ export const NODE_H = 56;
 export const H_GAP = 24;
 export const V_GAP = 56;
 
-// BFS from rootIdx through childrenIdx. Cross-fragment edges (exchange → peer
-// sink) are followed only to assign a depth to peers that the spanning tree
-// would not otherwise visit; peers retain their own parentIdx lineage.
-export function computeDepths(plan) {
-  const depths = new Array(plan.nodes.length).fill(null);
-  if (plan.rootIdx === null) return depths;
+// ── BFS helpers ───────────────────────────────────────────────────────────────
 
-  const queue = [plan.rootIdx];
-  depths[plan.rootIdx] = 0;
+function bfsFrom(plan, depths, startIdx, startDepth) {
+  depths[startIdx] = startDepth;
+  const queue = [startIdx];
   while (queue.length) {
     const idx = queue.shift();
     const node = plan.nodes[idx];
@@ -30,6 +26,37 @@ export function computeDepths(plan) {
         queue.push(peerIdx);
       }
     }
+  }
+}
+
+// Find the smallest non-null depth among already-placed nodes in the given
+// fragment. Unreached pipeline roots in that fragment are anchored at this
+// depth so they appear as siblings to already-placed pipeline roots.
+function pickFragmentAnchor(plan, depths, fragmentId) {
+  let minDepth = null;
+  for (const n of plan.nodes) {
+    if (n.fragmentId !== fragmentId) continue;
+    if (depths[n.idx] === null) continue;
+    if (minDepth === null || depths[n.idx] < minDepth) minDepth = depths[n.idx];
+  }
+  return minDepth ?? 0;
+}
+
+// BFS from rootIdx through childrenIdx. Cross-fragment edges (exchange → peer
+// sink) are followed only to assign a depth to peers that the spanning tree
+// would not otherwise visit; peers retain their own parentIdx lineage.
+// After the main BFS, any pipeline root still at depth=null is anchored at
+// the minimum depth of its fragment (or 0), then BFS'd from there.
+export function computeDepths(plan) {
+  const depths = new Array(plan.nodes.length).fill(null);
+  if (plan.rootIdx !== null) {
+    bfsFrom(plan, depths, plan.rootIdx, 0);
+  }
+  // Place every still-unreached pipeline root.
+  for (const { fragmentId, idx } of plan.pipelineRoots) {
+    if (depths[idx] !== null) continue;
+    const anchorDepth = pickFragmentAnchor(plan, depths, fragmentId);
+    bfsFrom(plan, depths, idx, anchorDepth);
   }
   return depths;
 }
@@ -54,8 +81,9 @@ export function computeSubtreeWidths(plan) {
     return widths[idx];
   }
   if (plan.rootIdx !== null) recur(plan.rootIdx);
-  for (const fragRootIdx of plan.fragmentRoots) {
-    if (fragRootIdx !== null && widths[fragRootIdx] === 0) recur(fragRootIdx);
+  // Compute widths for every pipeline root (covers multi-pipeline fragments).
+  for (const { idx } of plan.pipelineRoots) {
+    if (widths[idx] === 0) recur(idx);
   }
   return widths;
 }
@@ -64,12 +92,18 @@ export function computeSubtreeWidths(plan) {
 // fragments are placed below their matching EXCHANGE; if multiple fragments
 // would collide horizontally, push later fragments (by ascending fragmentId)
 // rightward by their subtree width + H_GAP.
+// After placing all fragment roots, place any remaining pipeline roots
+// (intra-fragment disconnected pipelines) to the right.
 export function layoutPlan(plan) {
   const pos = new Array(plan.nodes.length).fill(null).map(() => ({ x: 0, y: 0 }));
   const depths = computeDepths(plan);
   const widths = computeSubtreeWidths(plan);
 
+  // Track which nodes have been assigned a position.
+  const placed = new Set();
+
   function assignSubtree(idx, centerX) {
+    placed.add(idx);
     pos[idx].x = centerX;
     pos[idx].y = (depths[idx] ?? 0) * (NODE_H + V_GAP);
     const node = plan.nodes[idx];
@@ -121,6 +155,35 @@ export function layoutPlan(plan) {
     }
     assignSubtree(fragRootIdx, centerX);
     placedRanges.push({ fragmentId: fragId, xMin, xMax });
+  }
+
+  // Place any remaining pipeline roots (intra-fragment disconnected pipelines).
+  for (const { fragmentId, idx } of plan.pipelineRoots) {
+    if (placed.has(idx)) continue;
+
+    const w = widths[idx];
+    // Anchor x: rightmost edge of any already-placed range, else 0.
+    let centerX = 0;
+    if (placedRanges.length > 0) {
+      const rightmost = placedRanges.reduce((max, r) => r.xMax > max ? r.xMax : max, -Infinity);
+      centerX = rightmost + H_GAP + w / 2;
+    }
+    let xMin = centerX - w / 2;
+    let xMax = centerX + w / 2;
+    let collision = true;
+    while (collision) {
+      collision = false;
+      for (const r of placedRanges) {
+        if (xMin < r.xMax && xMax > r.xMin) {
+          const shift = (r.xMax + H_GAP) - xMin;
+          xMin += shift; xMax += shift; centerX += shift;
+          collision = true;
+          break;
+        }
+      }
+    }
+    assignSubtree(idx, centerX);
+    placedRanges.push({ fragmentId, xMin, xMax });
   }
 
   return pos;

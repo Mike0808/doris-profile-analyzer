@@ -81,6 +81,7 @@ function walkOperators(opNode, visit) {
  *   nodes: PlanNode[],          // flat array, indexed by .idx
  *   rootIdx: number | null,     // RESULT_SINK_OPERATOR, or first node in fragment 0
  *   fragmentRoots: number[],    // rootIdx per fragment (first pipeline root)
+ *   pipelineRoots: { fragmentId: number, idx: number }[], // every parentIdx===null node
  *   fragmentMaxExecTime: (number|null)[], // max ExecTime across all ops per fragment (ns)
  *   warnings: { message: string }[],
  * }
@@ -199,5 +200,11 @@ export function buildPlanTree(ast) {
   let rootIdx = nodes.findIndex(n => n.name === 'RESULT_SINK_OPERATOR');
   if (rootIdx < 0) rootIdx = fragmentRoots[0] ?? null;
 
-  return { nodes, rootIdx, fragmentRoots, fragmentMaxExecTime, warnings };
+  // Derive pipelineRoots: every node with parentIdx === null is a pipeline root.
+  const pipelineRoots = [];
+  for (const n of nodes) {
+    if (n.parentIdx === null) pipelineRoots.push({ fragmentId: n.fragmentId, idx: n.idx });
+  }
+
+  return { nodes, rootIdx, fragmentRoots, pipelineRoots, fragmentMaxExecTime, warnings };
 }
