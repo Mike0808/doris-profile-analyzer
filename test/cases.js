@@ -2224,3 +2224,19 @@ suite('renderPlanTree — node cards', () => {
       `Expected heat-5; got ${hotCard.getAttribute('class')}`);
   });
 });
+
+suite('renderPlanTree — real samples', () => {
+  for (const path of SAMPLE_PATHS) {
+    test(`${path} — renders without exception, node count matches plan`, async () => {
+      const raw = await (await fetch(path)).text();
+      const r = runPipeline(raw);
+      const container = document.createElement('div');
+      document.body.appendChild(container);
+      renderPlanTree(container, r.ast);
+      const plan = buildPlanTree(r.ast);
+      const nodeGs = container.querySelectorAll('g.node');
+      assertEqual(nodeGs.length, plan.nodes.length);
+      document.body.removeChild(container);
+    });
+  }
+});
