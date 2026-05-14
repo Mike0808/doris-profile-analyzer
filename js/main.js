@@ -2,6 +2,7 @@ import { runPipeline } from './parser/textParser.js';
 import { el, clear } from './util/dom.js';
 import { renderRaw } from './render/raw.js';
 import { renderScanSummary } from './render/scanSummary.js';
+import { renderJoinSummary } from './render/joinSummary.js';
 
 const openBtn   = document.getElementById('open-btn');
 const fileInput = document.getElementById('file-input');
@@ -168,4 +169,5 @@ function toggleWarningsPanel() {
 
 // Scan Summary is the default tab — registered first so it activates automatically.
 registerTab('Scan Summary', renderScanSummary);
+registerTab('Join Summary', renderJoinSummary);
 registerTab('Raw', renderRaw);

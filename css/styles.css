@@ -246,3 +246,58 @@ nav.tabs button.tab.active {
 .scan-summary-table .expanded .planinfo { background: var(--nord0); padding: 0.5em; white-space: pre-wrap; }
 .scan-summary-table .expanded .scanner-skew { display: flex; gap: 1.5em; align-items: baseline; }
 .scan-summary-table .expanded .scanner-skew .label { color: var(--nord3); }
+
+.join-summary { padding: 1em; }
+.join-summary .empty-state { padding: 2em; color: var(--nord3); text-align: center; }
+.join-summary-table {
+  display: grid;
+  grid-template-columns:
+    2em
+    minmax(5em, auto)
+    minmax(9em, auto)
+    minmax(7em, auto)
+    minmax(7em, auto)
+    minmax(7em, auto)
+    minmax(7em, auto)
+    minmax(9em, auto)
+    minmax(8em, auto)
+    minmax(5em, auto);
+  gap: 0;
+  font-size: 12px;
+}
+.join-summary-table .header,
+.join-summary-table .cell {
+  padding: 0.4em 0.6em;
+  border-bottom: 1px solid var(--nord3);
+}
+.join-summary-table .header {
+  font-weight: bold;
+  color: var(--nord8);
+  background: var(--nord1);
+  user-select: none;
+}
+.join-summary-table .cell { background: var(--nord0); }
+.join-summary-table .cell.numeric { text-align: right; font-variant-numeric: tabular-nums; }
+.join-summary-table .cell.skew-medium  { color: var(--nord13); font-weight: bold; }
+.join-summary-table .cell.skew-high    { color: var(--nord11); font-weight: bold; }
+.join-summary-table .cell.build-heavy  { color: var(--nord12); font-weight: bold; }
+.join-summary-table .header.sortable { cursor: pointer; }
+.join-summary-table .header.sortable:hover { background: var(--nord2); }
+.join-summary-table .header .sort-ind { margin-left: 0.3em; color: var(--nord3); }
+.join-summary-table .header.active .sort-ind { color: var(--nord8); }
+.join-summary-table .cell.expander { cursor: pointer; user-select: none; padding-right: 0.2em; }
+.join-summary-table .expanded {
+  grid-column: 1 / -1;
+  background: var(--nord1);
+  padding: 0.75em 1em;
+  border-bottom: 2px solid var(--nord3);
+  font-size: 12px;
+}
+.join-summary-table .expanded h3 { margin: 0.5em 0 0.25em; color: var(--nord8); font-size: 1em; }
+.join-summary-table .expanded table { border-collapse: collapse; width: 100%; margin-bottom: 0.5em; }
+.join-summary-table .expanded table th,
+.join-summary-table .expanded table td { padding: 0.2em 0.5em; border-bottom: 1px solid var(--nord3); text-align: left; }
+.join-summary-table .expanded table th { color: var(--nord8); }
+.join-summary-table .expanded .planinfo { background: var(--nord0); padding: 0.5em; white-space: pre-wrap; }
+.join-summary-table .expanded .time-breakdown { display: flex; gap: 1.5em; align-items: baseline; flex-wrap: wrap; }
+.join-summary-table .expanded .time-breakdown .label { color: var(--nord3); }
