@@ -1,0 +1,19 @@
+# Static-file deployment. No backend, no build step.
+#
+#   docker compose up -d
+#   open http://localhost:8000
+#
+# The repo root is mounted read-only into nginx's html dir, so edits
+# to the working tree are reflected on the next browser refresh.
+# Port 8000 matches the `python -m http.server 8000` convention in
+# README.md.
+
+services:
+  app:
+    image: nginx:alpine
+    container_name: doris-profile-analyzer
+    ports:
+      - "8000:80"
+    volumes:
+      - .:/usr/share/nginx/html:ro
+    restart: unless-stopped
