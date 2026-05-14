@@ -33,3 +33,29 @@ export function computeDepths(plan) {
   }
   return depths;
 }
+
+// Post-order: each leaf is NODE_W wide; each internal node is the sum of its
+// children's widths plus inter-sibling gaps (at least NODE_W if the children
+// pack tighter than the node itself).
+export function computeSubtreeWidths(plan) {
+  const widths = new Array(plan.nodes.length).fill(0);
+  function recur(idx) {
+    const node = plan.nodes[idx];
+    if (node.childrenIdx.length === 0) {
+      widths[idx] = NODE_W;
+      return NODE_W;
+    }
+    let sum = 0;
+    for (let i = 0; i < node.childrenIdx.length; i++) {
+      sum += recur(node.childrenIdx[i]);
+      if (i > 0) sum += H_GAP;
+    }
+    widths[idx] = Math.max(NODE_W, sum);
+    return widths[idx];
+  }
+  if (plan.rootIdx !== null) recur(plan.rootIdx);
+  for (const fragRootIdx of plan.fragmentRoots) {
+    if (fragRootIdx !== null && widths[fragRootIdx] === 0) recur(fragRootIdx);
+  }
+  return widths;
+}

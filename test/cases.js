@@ -1866,3 +1866,46 @@ suite('layout — computeDepths', () => {
     assertEqual(depths[3], 3);   // OLAP_SCAN under SINK
   });
 });
+
+// ── layout — Task 9: computeSubtreeWidths ────────────────────────────────────
+
+import { computeSubtreeWidths, NODE_W, H_GAP } from '../js/render/planTree.js';
+
+suite('layout — computeSubtreeWidths', () => {
+  test('Single leaf width = NODE_W', () => {
+    const fx = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           OLAP_SCAN_OPERATOR (id=0):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+`;
+    const ast = textParser(fx);
+    const plan = buildPlanTree(ast);
+    const w = computeSubtreeWidths(plan);
+    assertEqual(w[0], NODE_W);
+  });
+  test('Two-leaf siblings → root width = 2*NODE_W + H_GAP', () => {
+    const fx = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           HASH_JOIN_OPERATOR (id=0):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+             OLAP_SCAN_OPERATOR (id=1):
+                - ExecTime: avg 1ms, max 1ms, min 1ms
+             OLAP_SCAN_OPERATOR (id=2):
+                - ExecTime: avg 1ms, max 1ms, min 1ms
+`;
+    const ast = textParser(fx);
+    const plan = buildPlanTree(ast);
+    const w = computeSubtreeWidths(plan);
+    assertEqual(w[0], 2 * NODE_W + H_GAP);   // HASH_JOIN root
+    assertEqual(w[1], NODE_W);
+    assertEqual(w[2], NODE_W);
+  });
+});
