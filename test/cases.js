@@ -1843,3 +1843,26 @@ suite('buildPlanTree — JSON ≡ text equivalence', () => {
     });
   }
 });
+
+// ── layout — Task 8: computeDepths ───────────────────────────────────────────
+
+import { computeDepths } from '../js/render/planTree.js';
+
+suite('layout — computeDepths', () => {
+  test('Single-chain 3 nodes → depths [0, 1, 2]', () => {
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    const plan = buildPlanTree(ast);
+    const depths = computeDepths(plan);
+    assertEqual(depths, [0, 1, 2]);
+  });
+  test('Stitched 2 fragments → peer depth = exchange depth + 1', () => {
+    const ast = textParser(TWO_FRAGMENT_STITCH_FIXTURE);
+    const plan = buildPlanTree(ast);
+    const depths = computeDepths(plan);
+    // nodes order: F0 RESULT_SINK(0), F0 EXCH(1), F1 STREAM_SINK(2), F1 OLAP_SCAN(3)
+    assertEqual(depths[0], 0);   // RESULT_SINK
+    assertEqual(depths[1], 1);   // EXCHANGE
+    assertEqual(depths[2], 2);   // peer SINK, one level below EXCH
+    assertEqual(depths[3], 3);   // OLAP_SCAN under SINK
+  });
+});
