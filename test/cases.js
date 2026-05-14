@@ -2069,6 +2069,30 @@ suite('renderPlanTree — empty + structure smoke', () => {
   });
 });
 
+suite('renderPlanTree — pan/zoom', () => {
+  test('Initial render runs Fit (viewport transform is non-identity)', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    renderPlanTree(container, ast);
+    const viewport = container.querySelector('g.viewport');
+    const t = viewport.getAttribute('transform') || '';
+    assertTrue(t.includes('translate'));
+    document.body.removeChild(container);
+  });
+  test('Click "+" button updates zoom-pct text', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    renderPlanTree(container, ast);
+    const before = container.querySelector('.zoom-pct').textContent;
+    container.querySelector('.zoom-in').click();
+    const after = container.querySelector('.zoom-pct').textContent;
+    assertTrue(before !== after, `pct didn't change after +: ${before} → ${after}`);
+    document.body.removeChild(container);
+  });
+});
+
 suite('renderPlanTree — edges', () => {
   test('Intra-fragment edges: one per parent-child pair', () => {
     const container = document.createElement('div');

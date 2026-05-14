@@ -309,8 +309,108 @@ function renderNodesAndEdges(plan, nodesG, edges) {
     nodesG.appendChild(g);
   }
 }
-function attachPanZoom(/* svg, viewport, controls, plan */) {
-  // Filled in Task 14.
+function attachPanZoom(svg, viewport, controls, plan) {
+  const view = { scale: 1, tx: 0, ty: 0 };
+  const pctSpan = controls.querySelector('.zoom-pct');
+
+  function applyView() {
+    viewport.setAttribute('transform', `translate(${view.tx}, ${view.ty}) scale(${view.scale})`);
+    pctSpan.textContent = `${Math.round(view.scale * 100)}%`;
+  }
+
+  function bboxOfNodes() {
+    let minX =  Infinity, minY =  Infinity;
+    let maxX = -Infinity, maxY = -Infinity;
+    for (const g of viewport.querySelectorAll('g.node')) {
+      const m = /translate\(([-\d.]+),\s*([-\d.]+)\)/.exec(g.getAttribute('transform') || '');
+      if (!m) continue;
+      const x = Number(m[1]), y = Number(m[2]);
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x + NODE_W);
+      maxY = Math.max(maxY, y + NODE_H);
+    }
+    if (!Number.isFinite(minX)) return null;
+    return { minX, minY, maxX, maxY };
+  }
+
+  function fit() {
+    const b = bboxOfNodes();
+    if (!b) { applyView(); return; }
+    const rect = svg.getBoundingClientRect();
+    const svgW = Math.max(rect.width, 100);
+    const svgH = Math.max(rect.height, 100);
+    const bboxW = Math.max(b.maxX - b.minX, 1);
+    const bboxH = Math.max(b.maxY - b.minY, 1);
+    view.scale = 0.95 * Math.min(svgW / bboxW, svgH / bboxH);
+    view.tx = (svgW / 2) - ((b.minX + b.maxX) / 2) * view.scale;
+    view.ty = (svgH / 2) - ((b.minY + b.maxY) / 2) * view.scale;
+    applyView();
+  }
+
+  function zoomAt(factor, anchorClientX, anchorClientY) {
+    const rect = svg.getBoundingClientRect();
+    const cx = anchorClientX - rect.left;
+    const cy = anchorClientY - rect.top;
+    const newScale = Math.max(0.1, Math.min(4, view.scale * factor));
+    const actual = newScale / view.scale;
+    view.tx = cx - (cx - view.tx) * actual;
+    view.ty = cy - (cy - view.ty) * actual;
+    view.scale = newScale;
+    applyView();
+  }
+
+  controls.querySelector('.zoom-in').addEventListener('click', () => {
+    const r = svg.getBoundingClientRect();
+    zoomAt(1.25, r.left + r.width / 2, r.top + r.height / 2);
+  });
+  controls.querySelector('.zoom-out').addEventListener('click', () => {
+    const r = svg.getBoundingClientRect();
+    zoomAt(1 / 1.25, r.left + r.width / 2, r.top + r.height / 2);
+  });
+  controls.querySelector('.fit').addEventListener('click', fit);
+
+  svg.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const factor = Math.exp(-e.deltaY * 0.001);
+    zoomAt(factor, e.clientX, e.clientY);
+  }, { passive: false });
+
+  let dragging = false;
+  let lastX = 0, lastY = 0;
+  svg.addEventListener('mousedown', (e) => {
+    if (e.target.closest('g.node')) return;
+    dragging = true;
+    lastX = e.clientX; lastY = e.clientY;
+    svg.classList.add('grabbing');
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    view.tx += (e.clientX - lastX);
+    view.ty += (e.clientY - lastY);
+    lastX = e.clientX; lastY = e.clientY;
+    applyView();
+  });
+  window.addEventListener('mouseup', () => {
+    dragging = false;
+    svg.classList.remove('grabbing');
+  });
+
+  svg.setAttribute('tabindex', '0');
+  svg.addEventListener('keydown', (e) => {
+    if (e.key === 'f' || e.key === 'F') { fit(); e.preventDefault(); }
+    else if (e.key === '+' || e.key === '=') {
+      const r = svg.getBoundingClientRect();
+      zoomAt(1.25, r.left + r.width / 2, r.top + r.height / 2);
+    }
+    else if (e.key === '-' || e.key === '_') {
+      const r = svg.getBoundingClientRect();
+      zoomAt(1 / 1.25, r.left + r.width / 2, r.top + r.height / 2);
+    }
+  });
+
+  requestAnimationFrame(fit);
+  applyView();
 }
 function attachDetailPanel(/* wrap, nodesG, plan */) {
   // Filled in Task 15.
