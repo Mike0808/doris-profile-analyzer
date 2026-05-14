@@ -1468,3 +1468,353 @@ suite('renderJoinSummary — smoke', () => {
     assertContains(container.innerHTML, 'No hash join operators');
   });
 });
+
+// ── planTree — Task 1: extractDstId ──────────────────────────────────────────
+
+import { extractDstId } from '../js/parser/planTree.js';
+
+suite('planTree — extractDstId', () => {
+  test('EXCHANGE_OPERATOR (id=4):', () => {
+    assertEqual(extractDstId('EXCHANGE_OPERATOR (id=4):'), 4);
+  });
+  test('EXCHANGE_OPERATOR (id=4) variants tolerate spaces and trailing colons', () => {
+    assertEqual(extractDstId('EXCHANGE_OPERATOR (id=4 , nereids_id=900):'), 4);
+  });
+  test('DATA_STREAM_SINK_OPERATOR (id=4,dst_id=4):', () => {
+    assertEqual(extractDstId('DATA_STREAM_SINK_OPERATOR (id=4,dst_id=4):'), 4);
+  });
+  test('DATA_STREAM_SINK with whitespace around dst_id', () => {
+    assertEqual(extractDstId('DATA_STREAM_SINK_OPERATOR (id=4, dst_id = 7):'), 7);
+  });
+  test('Header without dst_id falls back to id=', () => {
+    assertEqual(extractDstId('EXCHANGE_OPERATOR (id=4):'), 4);
+  });
+  test('No id at all returns null', () => {
+    assertEqual(extractDstId('SOME_OPERATOR (no ids here):'), null);
+  });
+});
+
+// ── planTree — Task 2: shortName + extractExecTimeMaxNs ──────────────────────
+
+import { shortName, extractExecTimeMaxNs } from '../js/parser/planTree.js';
+
+suite('planTree — shortName', () => {
+  test('OLAP_SCAN_OPERATOR → OLAP_SCAN', () => {
+    assertEqual(shortName('OLAP_SCAN_OPERATOR'), 'OLAP_SCAN');
+  });
+  test('HASH_JOIN_OPERATOR → HASH_JOIN', () => {
+    assertEqual(shortName('HASH_JOIN_OPERATOR'), 'HASH_JOIN');
+  });
+  test('HASH_JOIN_SINK_OPERATOR → HASH_JOIN_SINK', () => {
+    assertEqual(shortName('HASH_JOIN_SINK_OPERATOR'), 'HASH_JOIN_SINK');
+  });
+  test('AGGREGATION_OPERATOR → AGG', () => {
+    assertEqual(shortName('AGGREGATION_OPERATOR'), 'AGG');
+  });
+  test('STREAMING_AGGREGATION_OPERATOR → STREAM_AGG', () => {
+    assertEqual(shortName('STREAMING_AGGREGATION_OPERATOR'), 'STREAM_AGG');
+  });
+  test('AGGREGATION_SINK_OPERATOR → AGG_SINK', () => {
+    assertEqual(shortName('AGGREGATION_SINK_OPERATOR'), 'AGG_SINK');
+  });
+  test('EXCHANGE_OPERATOR → EXCH', () => {
+    assertEqual(shortName('EXCHANGE_OPERATOR'), 'EXCH');
+  });
+  test('DATA_STREAM_SINK_OPERATOR → STREAM_SINK', () => {
+    assertEqual(shortName('DATA_STREAM_SINK_OPERATOR'), 'STREAM_SINK');
+  });
+  test('RESULT_SINK_OPERATOR → RESULT_SINK', () => {
+    assertEqual(shortName('RESULT_SINK_OPERATOR'), 'RESULT_SINK');
+  });
+  test('LOCAL_EXCHANGE_OPERATOR → LOCAL_EXCH', () => {
+    assertEqual(shortName('LOCAL_EXCHANGE_OPERATOR'), 'LOCAL_EXCH');
+  });
+  test('Unknown operator strips _OPERATOR', () => {
+    assertEqual(shortName('FOO_BAR_OPERATOR'), 'FOO_BAR');
+  });
+});
+
+suite('planTree — extractExecTimeMaxNs', () => {
+  test('From merged-side ExecTime value', () => {
+    const attrs = new Map([['ExecTime', 'avg 497.335us, max 2.24ms, min 289.156us']]);
+    assertEqual(extractExecTimeMaxNs(attrs), 2240000);
+  });
+  test('Returns null when ExecTime missing', () => {
+    assertEqual(extractExecTimeMaxNs(new Map()), null);
+  });
+  test('Returns null when ExecTime unparseable', () => {
+    const attrs = new Map([['ExecTime', 'some garbage']]);
+    assertEqual(extractExecTimeMaxNs(attrs), null);
+  });
+});
+
+// ── planTree — Task 3: buildPlanTree single fragment ─────────────────────────
+
+import { buildPlanTree } from '../js/parser/planTree.js';
+
+const SINGLE_FRAGMENT_FIXTURE = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           RESULT_SINK_OPERATOR (id=0):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+             EXCHANGE_OPERATOR (id=5):
+                - ExecTime: avg 2ms, max 2ms, min 2ms
+               OLAP_SCAN_OPERATOR (id=0. nereids_id=209. table name = lineitem(lineitem)):
+                  - ExecTime: avg 3ms, max 3ms, min 3ms
+`;
+
+suite('buildPlanTree — single fragment', () => {
+  test('Three operators → three nodes, root at index 0', () => {
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    const plan = buildPlanTree(ast);
+    assertEqual(plan.nodes.length, 3);
+    assertEqual(plan.nodes[0].name, 'RESULT_SINK_OPERATOR');
+    assertEqual(plan.nodes[0].parentIdx, null);
+  });
+  test('parent/child indexes form the operator chain', () => {
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    const plan = buildPlanTree(ast);
+    const [sink, exch, scan] = plan.nodes;
+    assertEqual(sink.childrenIdx, [exch.idx]);
+    assertEqual(exch.parentIdx, sink.idx);
+    assertEqual(exch.childrenIdx, [scan.idx]);
+    assertEqual(scan.parentIdx, exch.idx);
+    assertEqual(scan.childrenIdx, []);
+  });
+  test('Every node has fragmentId, opId, shortName, attrsRef', () => {
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    const plan = buildPlanTree(ast);
+    for (const n of plan.nodes) {
+      assertEqual(n.fragmentId, 0);
+      assertTrue(typeof n.opId === 'number');
+      assertTrue(typeof n.shortName === 'string' && n.shortName.length > 0);
+      assertTrue(n.attrsRef instanceof Map);
+    }
+  });
+  test('rootIdx points at the RESULT_SINK_OPERATOR', () => {
+    const ast = textParser(SINGLE_FRAGMENT_FIXTURE);
+    const plan = buildPlanTree(ast);
+    assertEqual(plan.rootIdx, 0);
+    assertEqual(plan.nodes[plan.rootIdx].name, 'RESULT_SINK_OPERATOR');
+  });
+});
+
+// ── planTree — Task 4: fragmentMaxExecTime ────────────────────────────────────
+
+const MULTI_OP_FRAGMENT_FIXTURE = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           RESULT_SINK_OPERATOR (id=0):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+             EXCHANGE_OPERATOR (id=5):
+                - ExecTime: avg 5ms, max 5ms, min 5ms
+       Fragment 1:
+         Pipeline : 0(instance_num=24):
+           OLAP_SCAN_OPERATOR (id=10):
+              - ExecTime: avg 22ms, max 30ms, min 18ms
+           OLAP_SCAN_OPERATOR (id=11):
+              - ExecTime: avg 8ms, max 10ms, min 6ms
+`;
+
+suite('buildPlanTree — fragmentMaxExecTime', () => {
+  test('Fragment 0 max is the EXCHANGE (5ms)', () => {
+    const ast = textParser(MULTI_OP_FRAGMENT_FIXTURE);
+    const plan = buildPlanTree(ast);
+    assertEqual(plan.fragmentMaxExecTime[0], 5_000_000);
+  });
+  test('Fragment 1 max is the first OLAP_SCAN (30ms)', () => {
+    const ast = textParser(MULTI_OP_FRAGMENT_FIXTURE);
+    const plan = buildPlanTree(ast);
+    assertEqual(plan.fragmentMaxExecTime[1], 30_000_000);
+  });
+  test('fragmentMaxExecTime entry is null when no operator has parseable ExecTime', () => {
+    const fx = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           RESULT_SINK_OPERATOR (id=0):
+              - SomethingElse: 1
+`;
+    const ast = textParser(fx);
+    const plan = buildPlanTree(ast);
+    assertEqual(plan.fragmentMaxExecTime[0], null);
+  });
+});
+
+// ── planTree — Task 5: cross-fragment stitching ───────────────────────────────
+
+const TWO_FRAGMENT_STITCH_FIXTURE = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           RESULT_SINK_OPERATOR (id=0):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+             EXCHANGE_OPERATOR (id=4):
+                - ExecTime: avg 2ms, max 2ms, min 2ms
+       Fragment 1:
+         Pipeline : 0(instance_num=24):
+           DATA_STREAM_SINK_OPERATOR (id=4,dst_id=4):
+              - ExecTime: avg 3ms, max 3ms, min 3ms
+             OLAP_SCAN_OPERATOR (id=10):
+                - ExecTime: avg 4ms, max 4ms, min 4ms
+`;
+
+suite('buildPlanTree — cross-fragment stitching', () => {
+  test('EXCHANGE id=4 is linked to DATA_STREAM_SINK dst_id=4', () => {
+    const ast = textParser(TWO_FRAGMENT_STITCH_FIXTURE);
+    const plan = buildPlanTree(ast);
+    const exch = plan.nodes.find(n => n.name === 'EXCHANGE_OPERATOR');
+    const sink = plan.nodes.find(n => n.name === 'DATA_STREAM_SINK_OPERATOR');
+    assertTrue(exch !== undefined);
+    assertTrue(sink !== undefined);
+    assertEqual(exch.crossFragmentLink.kind, 'exchange');
+    assertEqual(exch.crossFragmentLink.dstId, 4);
+    assertEqual(exch.crossFragmentLink.peerIdx, sink.idx);
+  });
+  test('No warnings on a clean stitch', () => {
+    const ast = textParser(TWO_FRAGMENT_STITCH_FIXTURE);
+    const plan = buildPlanTree(ast);
+    assertEqual(plan.warnings, []);
+  });
+  test('LOCAL_EXCHANGE_OPERATOR is not stitched', () => {
+    const fx = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           LOCAL_EXCHANGE_OPERATOR (PASSTHROUGH) (id=-8):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+`;
+    const ast = textParser(fx);
+    const plan = buildPlanTree(ast);
+    const lx = plan.nodes.find(n => n.name === 'LOCAL_EXCHANGE_OPERATOR');
+    assertTrue(lx !== undefined);
+    assertEqual(lx.crossFragmentLink, null);
+  });
+});
+
+// ── planTree — Task 6: rootIdx + warnings ────────────────────────────────────
+
+suite('buildPlanTree — rootIdx + warnings', () => {
+  test('rootIdx points at the RESULT_SINK across fragments', () => {
+    const ast = textParser(TWO_FRAGMENT_STITCH_FIXTURE);
+    const plan = buildPlanTree(ast);
+    assertEqual(plan.nodes[plan.rootIdx].name, 'RESULT_SINK_OPERATOR');
+  });
+  test('rootIdx falls back to fragmentRoots[0] when no RESULT_SINK', () => {
+    const fx = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           OLAP_SCAN_OPERATOR (id=0):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+`;
+    const ast = textParser(fx);
+    const plan = buildPlanTree(ast);
+    assertEqual(plan.rootIdx, 0);
+    assertEqual(plan.nodes[plan.rootIdx].name, 'OLAP_SCAN_OPERATOR');
+  });
+  test('Unmatched EXCHANGE produces a warning + peerIdx null', () => {
+    const fx = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           EXCHANGE_OPERATOR (id=99):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+`;
+    const ast = textParser(fx);
+    const plan = buildPlanTree(ast);
+    const exch = plan.nodes.find(n => n.name === 'EXCHANGE_OPERATOR');
+    assertEqual(exch.crossFragmentLink.peerIdx, null);
+    assertEqual(plan.warnings.length, 1);
+    assertContains(plan.warnings[0].message, 'Unmatched EXCHANGE');
+  });
+  test('Duplicate DATA_STREAM_SINK dst_id produces a warning', () => {
+    const fx = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           DATA_STREAM_SINK_OPERATOR (id=4,dst_id=7):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+       Fragment 1:
+         Pipeline : 0(instance_num=24):
+           DATA_STREAM_SINK_OPERATOR (id=5,dst_id=7):
+              - ExecTime: avg 2ms, max 2ms, min 2ms
+`;
+    const ast = textParser(fx);
+    const plan = buildPlanTree(ast);
+    assertEqual(plan.warnings.length, 1);
+    assertContains(plan.warnings[0].message, 'Duplicate');
+  });
+});
+
+// ── planTree — Task 7: real-sample integration ────────────────────────────────
+// SAMPLE_PATHS and PAIRS are defined in earlier suites above — do NOT redeclare.
+// runPipeline is already imported above.
+
+suite('buildPlanTree — real samples', () => {
+  for (const path of SAMPLE_PATHS) {
+    test(`${path} — buildPlanTree no exception, rootIdx set`, async () => {
+      const raw = await (await fetch(path)).text();
+      const r = runPipeline(raw);
+      const plan = buildPlanTree(r.ast);
+      assertTrue(plan.nodes.length > 0, `Got ${plan.nodes.length} nodes`);
+      assertTrue(plan.rootIdx !== null);
+    });
+    test(`${path} — every EXCHANGE has dstId set`, async () => {
+      const raw = await (await fetch(path)).text();
+      const r = runPipeline(raw);
+      const plan = buildPlanTree(r.ast);
+      const exchanges = plan.nodes.filter(n => n.name === 'EXCHANGE_OPERATOR');
+      for (const e of exchanges) {
+        assertTrue(e.crossFragmentLink !== null);
+        assertTrue(typeof e.crossFragmentLink.dstId === 'number');
+      }
+    });
+  }
+  test('tpch_q3.txt — 3 fragments, rootIdx is RESULT_SINK in fragment 0', async () => {
+    const raw = await (await fetch('../samples/tpch/tpch_q3.txt')).text();
+    const r = runPipeline(raw);
+    const plan = buildPlanTree(r.ast);
+    assertEqual(plan.fragmentRoots.length, 3);
+    assertEqual(plan.nodes[plan.rootIdx].name, 'RESULT_SINK_OPERATOR');
+    assertEqual(plan.nodes[plan.rootIdx].fragmentId, 0);
+  });
+});
+
+suite('buildPlanTree — JSON ≡ text equivalence', () => {
+  for (const [txtPath, jsonPath] of PAIRS) {
+    test(`${txtPath} ≡ ${jsonPath} — same node count`, async () => {
+      const t = runPipeline(await (await fetch(txtPath)).text());
+      const j = runPipeline(await (await fetch(jsonPath)).text());
+      assertEqual(buildPlanTree(t.ast).nodes.length, buildPlanTree(j.ast).nodes.length);
+    });
+    test(`${txtPath} ≡ ${jsonPath} — same root fragment+opId`, async () => {
+      const t = runPipeline(await (await fetch(txtPath)).text());
+      const j = runPipeline(await (await fetch(jsonPath)).text());
+      const tp = buildPlanTree(t.ast);
+      const jp = buildPlanTree(j.ast);
+      assertEqual(
+        { f: tp.nodes[tp.rootIdx].fragmentId, op: tp.nodes[tp.rootIdx].opId },
+        { f: jp.nodes[jp.rootIdx].fragmentId, op: jp.nodes[jp.rootIdx].opId },
+      );
+    });
+  }
+});
