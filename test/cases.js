@@ -1954,9 +1954,12 @@ MergedProfile
     assertEqual(pos[sink.idx].y - pos[exch.idx].y, NODE_H + V_GAP);
   });
   test('Root subtree width is registered correctly when rootIdx is not first pipeline root', () => {
-    // Synthetic ast where Fragment 0 has RESULT_SINK in pipeline 1, not pipeline 0.
-    // Pipeline 0 has a smaller subtree; without the fix, the registered collision
-    // range would underestimate the root subtree and let non-root fragments overlap.
+    // Fragment 0 has rootIdx (RESULT_SINK) in pipeline 1; its subtree is WIDER
+    // than the AGGREGATION in pipeline 0 (which is fragmentRoots[0]). Before the
+    // fix, placedRanges underestimated the root tree's extent — the registered
+    // range came from the narrow AGGREGATION subtree, allowing Fragment 1 to
+    // land in an x-range that overlaps the rightmost LEAF (id=6) of the
+    // actually-wider HASH_JOIN under RESULT_SINK.
     const fx = `Summary:
    - Profile ID: x
 MergedProfile
@@ -1968,27 +1971,30 @@ MergedProfile
          Pipeline : 1(instance_num=1):
            RESULT_SINK_OPERATOR (id=0):
               - ExecTime: avg 1ms, max 1ms, min 1ms
-             EXCHANGE_OPERATOR (id=4):
+             HASH_JOIN_OPERATOR (id=5):
                 - ExecTime: avg 1ms, max 1ms, min 1ms
+               EXCHANGE_OPERATOR (id=4):
+                  - ExecTime: avg 1ms, max 1ms, min 1ms
+               AGGREGATION_OPERATOR (id=6):
+                  - ExecTime: avg 1ms, max 1ms, min 1ms
        Fragment 1:
          Pipeline : 0(instance_num=24):
            DATA_STREAM_SINK_OPERATOR (id=4,dst_id=4):
               - ExecTime: avg 1ms, max 1ms, min 1ms
              OLAP_SCAN_OPERATOR (id=20):
                 - ExecTime: avg 1ms, max 1ms, min 1ms
-             OLAP_SCAN_OPERATOR (id=21):
-                - ExecTime: avg 1ms, max 1ms, min 1ms
 `;
     const ast = textParser(fx);
     const plan = buildPlanTree(ast);
     const pos = layoutPlan(plan);
-    // Fragment 1 root (DATA_STREAM_SINK) should land BELOW the EXCHANGE, with
-    // its x set so its subtree doesn't overlap the RESULT_SINK subtree.
-    const exch = plan.nodes.find(n => n.name === 'EXCHANGE_OPERATOR');
+    // The right-hand AGGREGATION leaf under HASH_JOIN (id=6) and Fragment 1's
+    // DATA_STREAM_SINK must not overlap horizontally.
+    const otherLeaf = plan.nodes.find(n => n.name === 'AGGREGATION_OPERATOR' && n.opId === 6);
     const sink = plan.nodes.find(n => n.name === 'DATA_STREAM_SINK_OPERATOR');
-    // The sink should be directly under the exchange (no collision shift expected
-    // because fragment 1's subtree fits beneath the exchange's column).
-    assertEqual(pos[sink.idx].x, pos[exch.idx].x);
+    const leafRight = pos[otherLeaf.idx].x + NODE_W / 2;
+    const sinkLeft  = pos[sink.idx].x - NODE_W / 2;
+    assertTrue(sinkLeft >= leafRight,
+      `Fragment 1 sink (x=${pos[sink.idx].x}) overlaps root-tree LEAF (x=${pos[otherLeaf.idx].x})`);
   });
 });
 
