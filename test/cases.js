@@ -1953,6 +1953,43 @@ MergedProfile
     const sink = plan.nodes.find(n => n.name === 'DATA_STREAM_SINK_OPERATOR');
     assertEqual(pos[sink.idx].y - pos[exch.idx].y, NODE_H + V_GAP);
   });
+  test('Root subtree width is registered correctly when rootIdx is not first pipeline root', () => {
+    // Synthetic ast where Fragment 0 has RESULT_SINK in pipeline 1, not pipeline 0.
+    // Pipeline 0 has a smaller subtree; without the fix, the registered collision
+    // range would underestimate the root subtree and let non-root fragments overlap.
+    const fx = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           AGGREGATION_OPERATOR (id=10):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+         Pipeline : 1(instance_num=1):
+           RESULT_SINK_OPERATOR (id=0):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+             EXCHANGE_OPERATOR (id=4):
+                - ExecTime: avg 1ms, max 1ms, min 1ms
+       Fragment 1:
+         Pipeline : 0(instance_num=24):
+           DATA_STREAM_SINK_OPERATOR (id=4,dst_id=4):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+             OLAP_SCAN_OPERATOR (id=20):
+                - ExecTime: avg 1ms, max 1ms, min 1ms
+             OLAP_SCAN_OPERATOR (id=21):
+                - ExecTime: avg 1ms, max 1ms, min 1ms
+`;
+    const ast = textParser(fx);
+    const plan = buildPlanTree(ast);
+    const pos = layoutPlan(plan);
+    // Fragment 1 root (DATA_STREAM_SINK) should land BELOW the EXCHANGE, with
+    // its x set so its subtree doesn't overlap the RESULT_SINK subtree.
+    const exch = plan.nodes.find(n => n.name === 'EXCHANGE_OPERATOR');
+    const sink = plan.nodes.find(n => n.name === 'DATA_STREAM_SINK_OPERATOR');
+    // The sink should be directly under the exchange (no collision shift expected
+    // because fragment 1's subtree fits beneath the exchange's column).
+    assertEqual(pos[sink.idx].x, pos[exch.idx].x);
+  });
 });
 
 // ── layout — multi-pipeline fragments (Phase 2 fix) ──────────────────────────
@@ -1984,9 +2021,11 @@ suite('layout — multi-pipeline fragments', () => {
     const plan = buildPlanTree(ast);
     const pos = layoutPlan(plan);
     const rootIdxs = plan.pipelineRoots.map(r => r.idx);
-    const xs = rootIdxs.map(i => pos[i].x);
-    const xSet = new Set(xs);
-    assertTrue(xSet.size === 3, `Expected 3 unique x values; got ${xSet.size}: ${xs}`);
+    const xs = rootIdxs.map(i => pos[i].x).sort((a, b) => a - b);
+    assertTrue(xs.length === 3, `Expected 3 positions; got ${xs.length}`);
+    // Each pipeline root must be at least NODE_W + H_GAP apart (no overlap).
+    assertTrue(xs[1] - xs[0] >= NODE_W + H_GAP, `Gap 0→1 = ${xs[1] - xs[0]}; need >= ${NODE_W + H_GAP}`);
+    assertTrue(xs[2] - xs[1] >= NODE_W + H_GAP, `Gap 1→2 = ${xs[2] - xs[1]}; need >= ${NODE_W + H_GAP}`);
   });
   test('computeDepths assigns a depth to every node', () => {
     const ast = textParser(MULTI_PIPELINE_FIXTURE);

@@ -77,6 +77,7 @@ export function computeSubtreeWidths(plan) {
       sum += recur(node.childrenIdx[i]);
       if (i > 0) sum += H_GAP;
     }
+    // Floor: an internal node is never narrower than its own card.
     widths[idx] = Math.max(NODE_W, sum);
     return widths[idx];
   }
@@ -121,7 +122,7 @@ export function layoutPlan(plan) {
   const placedRanges = [];
   if (plan.rootIdx !== null) {
     const globalFragId = plan.nodes[plan.rootIdx].fragmentId;
-    const rootW = widths[plan.fragmentRoots[globalFragId]];
+    const rootW = widths[plan.rootIdx];
     placedRanges.push({
       fragmentId: globalFragId,
       xMin: -rootW / 2,
