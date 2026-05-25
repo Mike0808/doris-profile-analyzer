@@ -350,6 +350,10 @@ nav.tabs button.tab.active {
   stroke: var(--nord15);
   stroke-dasharray: 6 4;
 }
+.plan-tree-svg path.edge.pipeline {
+  stroke: var(--nord7);
+  stroke-dasharray: 2 3;
+}
 
 .plan-tree-controls {
   position: absolute;

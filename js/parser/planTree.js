@@ -97,6 +97,7 @@ function walkOperators(opNode, visit) {
  *   parentIdx: number | null,
  *   childrenIdx: number[],
  *   crossFragmentLink: null | { kind: 'exchange', dstId: number, peerIdx: number|null },
+ *   pipelineLink: null | { kind: 'pipeline', linkId: number, peerIdx: number },
  *   execTimeMaxNs: number | null,
  *   attrsRef: Map,              // direct reference to the OperatorNode.attrs Map
  *   raw: OperatorNode,          // back-reference to the raw AST node
@@ -138,6 +139,7 @@ export function buildPlanTree(ast) {
           parentIdx,
           childrenIdx: [],
           crossFragmentLink: null,
+          pipelineLink: null,
           execTimeMaxNs: extractExecTimeMaxNs(opNode.attrs),
           attrsRef: opNode.attrs,
           raw: opNode,
@@ -193,6 +195,41 @@ export function buildPlanTree(ast) {
     if (peerIdx === null) {
       warnings.push({ message: `Unmatched EXCHANGE dst=${dstId} at idx ${n.idx}` });
     }
+  }
+
+  // ── Within-fragment pipeline stitching ───────────────────────────────────────
+  // Doris 3.x breaks a fragment's plan into multiple pipelines at blocking
+  // operators (a "pipeline breaker"). Each non-first pipeline is headed by a
+  // *_SINK_OPERATOR (id=X) whose output is read by the matching source operator
+  // *_OPERATOR (id=X) sitting in another pipeline of the SAME fragment — e.g.
+  // AGGREGATION_SINK_OPERATOR(id=6) feeds AGGREGATION_OPERATOR(id=6), and
+  // LOCAL_EXCHANGE_SINK_OPERATOR(id=-8) feeds LOCAL_EXCHANGE_OPERATOR(id=-8).
+  // Without stitching these, every pipeline renders as a disconnected component.
+  // Doris 3.x: https://doris.apache.org/docs/3.x/query-acceleration/pipeline-execution-engine/
+  //
+  // The sink and its source share the same id within the fragment, so a source
+  // is the unique non-sink operator with the same (fragmentId, opId). DATA_STREAM
+  // sinks are cross-fragment (handled above) and RESULT sinks are the query root,
+  // so neither participates here.
+  const sourceByFragOp = new Map();   // `${fragmentId}:${opId}` → idx (non-sink ops)
+  for (const n of nodes) {
+    if (n.name.endsWith('_SINK_OPERATOR')) continue;
+    const key = `${n.fragmentId}:${n.opId}`;
+    if (!sourceByFragOp.has(key)) sourceByFragOp.set(key, n.idx);
+  }
+  for (const n of nodes) {
+    if (n.parentIdx !== null) continue;            // only pipeline-root sinks
+    if (!n.name.endsWith('_SINK_OPERATOR')) continue;
+    if (n.name === 'DATA_STREAM_SINK_OPERATOR') continue;  // cross-fragment
+    if (n.name === 'RESULT_SINK_OPERATOR') continue;       // query root
+    const sourceIdx = sourceByFragOp.get(`${n.fragmentId}:${n.opId}`);
+    if (sourceIdx === undefined) {
+      warnings.push({
+        message: `Unmatched pipeline sink ${n.name} id=${n.opId} in fragment ${n.fragmentId}`,
+      });
+      continue;
+    }
+    nodes[sourceIdx].pipelineLink = { kind: 'pipeline', linkId: n.opId, peerIdx: n.idx };
   }
 
   // ── Task 6: rootIdx resolution ────────────────────────────────────────────────

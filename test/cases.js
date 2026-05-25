@@ -1705,6 +1705,77 @@ MergedProfile
   });
 });
 
+// ── planTree — within-fragment pipeline stitching ─────────────────────────────
+// Doris splits a fragment into pipelines at blocking operators; a *_SINK(id=X)
+// heads one pipeline and feeds the matching source *_OPERATOR(id=X) in another.
+// Without stitching, every pipeline is a disconnected component (the bug behind
+// the flat-row Plan Tree). See js/parser/planTree.js.
+
+const WITHIN_FRAGMENT_FIXTURE = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           RESULT_SINK_OPERATOR (id=0):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+             AGGREGATION_OPERATOR (id=1):
+                - ExecTime: avg 2ms, max 2ms, min 2ms
+         Pipeline : 1(instance_num=1):
+           AGGREGATION_SINK_OPERATOR (id=1):
+              - ExecTime: avg 3ms, max 3ms, min 3ms
+             OLAP_SCAN_OPERATOR (id=2):
+                - ExecTime: avg 4ms, max 4ms, min 4ms
+`;
+
+// HASH_JOIN consumes a probe (operator child) AND a build (linked sink).
+const JOIN_BUILD_PROBE_FIXTURE = `Summary:
+   - Profile ID: x
+MergedProfile
+     Fragments:
+       Fragment 0:
+         Pipeline : 0(instance_num=1):
+           RESULT_SINK_OPERATOR (id=0):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+             HASH_JOIN_OPERATOR (id=5):
+                - ExecTime: avg 1ms, max 1ms, min 1ms
+               OLAP_SCAN_OPERATOR (id=4):
+                  - ExecTime: avg 1ms, max 1ms, min 1ms
+         Pipeline : 1(instance_num=1):
+           HASH_JOIN_SINK_OPERATOR (id=5):
+              - ExecTime: avg 1ms, max 1ms, min 1ms
+             OLAP_SCAN_OPERATOR (id=6):
+                - ExecTime: avg 1ms, max 1ms, min 1ms
+`;
+
+suite('buildPlanTree — within-fragment pipeline stitching', () => {
+  test('AGGREGATION_OPERATOR is linked to its AGGREGATION_SINK_OPERATOR peer', () => {
+    const plan = buildPlanTree(textParser(WITHIN_FRAGMENT_FIXTURE));
+    const agg = plan.nodes.find(n => n.name === 'AGGREGATION_OPERATOR');
+    const sink = plan.nodes.find(n => n.name === 'AGGREGATION_SINK_OPERATOR');
+    assertTrue(agg !== undefined && sink !== undefined);
+    assertEqual(agg.pipelineLink.kind, 'pipeline');
+    assertEqual(agg.pipelineLink.linkId, 1);
+    assertEqual(agg.pipelineLink.peerIdx, sink.idx);
+  });
+  test('Pipeline-linked sink is not treated as a cross-fragment link', () => {
+    const plan = buildPlanTree(textParser(WITHIN_FRAGMENT_FIXTURE));
+    const sink = plan.nodes.find(n => n.name === 'AGGREGATION_SINK_OPERATOR');
+    assertEqual(sink.crossFragmentLink, null);
+  });
+  test('Clean stitch produces no warnings', () => {
+    const plan = buildPlanTree(textParser(WITHIN_FRAGMENT_FIXTURE));
+    assertEqual(plan.warnings, []);
+  });
+  test('HASH_JOIN gets both a probe (child) and a build (linked sink)', () => {
+    const plan = buildPlanTree(textParser(JOIN_BUILD_PROBE_FIXTURE));
+    const join = plan.nodes.find(n => n.name === 'HASH_JOIN_OPERATOR');
+    const buildSink = plan.nodes.find(n => n.name === 'HASH_JOIN_SINK_OPERATOR');
+    assertEqual(join.childrenIdx.length, 1);                 // probe scan (id=4)
+    assertEqual(join.pipelineLink.peerIdx, buildSink.idx);   // build side
+  });
+});
+
 // ── planTree — Task 6: rootIdx + warnings ────────────────────────────────────
 
 suite('buildPlanTree — rootIdx + warnings', () => {
@@ -1865,6 +1936,13 @@ suite('layout — computeDepths', () => {
     assertEqual(depths[2], 2);   // peer SINK, one level below EXCH
     assertEqual(depths[3], 3);   // OLAP_SCAN under SINK
   });
+  test('Within-fragment pipelines stitch into one chain → depths [0, 1, 2, 3]', () => {
+    // RESULT_SINK → AGGREGATION(1) → [pipe] AGGREGATION_SINK(1) → OLAP_SCAN(2)
+    const plan = buildPlanTree(textParser(WITHIN_FRAGMENT_FIXTURE));
+    const depths = computeDepths(plan);
+    // node order: RESULT_SINK(0), AGGREGATION(1), AGGREGATION_SINK(2), OLAP_SCAN(3)
+    assertEqual(depths, [0, 1, 2, 3]);
+  });
 });
 
 // ── layout — Task 9: computeSubtreeWidths ────────────────────────────────────
@@ -1953,13 +2031,29 @@ MergedProfile
     const sink = plan.nodes.find(n => n.name === 'DATA_STREAM_SINK_OPERATOR');
     assertEqual(pos[sink.idx].y - pos[exch.idx].y, NODE_H + V_GAP);
   });
-  test('Root subtree width is registered correctly when rootIdx is not first pipeline root', () => {
-    // Fragment 0 has rootIdx (RESULT_SINK) in pipeline 1; its subtree is WIDER
-    // than the AGGREGATION in pipeline 0 (which is fragmentRoots[0]). Before the
-    // fix, placedRanges underestimated the root tree's extent — the registered
-    // range came from the narrow AGGREGATION subtree, allowing Fragment 1 to
-    // land in an x-range that overlaps the rightmost LEAF (id=6) of the
-    // actually-wider HASH_JOIN under RESULT_SINK.
+  test('Within-fragment sink is placed directly under the source that reads it', () => {
+    const plan = buildPlanTree(textParser(WITHIN_FRAGMENT_FIXTURE));
+    const pos = layoutPlan(plan);
+    const agg  = plan.nodes.find(n => n.name === 'AGGREGATION_OPERATOR');
+    const sink = plan.nodes.find(n => n.name === 'AGGREGATION_SINK_OPERATOR');
+    assertEqual(pos[sink.idx].x, pos[agg.idx].x);                    // centered below
+    assertEqual(pos[sink.idx].y - pos[agg.idx].y, NODE_H + V_GAP);   // one level down
+  });
+  test('Join build/probe become side-by-side children (no overlap)', () => {
+    const plan = buildPlanTree(textParser(JOIN_BUILD_PROBE_FIXTURE));
+    const pos = layoutPlan(plan);
+    const probe = plan.nodes.find(n => n.name === 'OLAP_SCAN_OPERATOR' && n.opId === 4);
+    const build = plan.nodes.find(n => n.name === 'HASH_JOIN_SINK_OPERATOR');
+    assertTrue(Math.abs(pos[probe.idx].x - pos[build.idx].x) >= NODE_W + H_GAP,
+      `probe (x=${pos[probe.idx].x}) and build (x=${pos[build.idx].x}) overlap`);
+  });
+  test('Cross-fragment peer hangs under its EXCHANGE without overlapping siblings', () => {
+    // Fragment 0 has rootIdx (RESULT_SINK) in pipeline 1, a disconnected
+    // AGGREGATION pipeline (id=10), and a HASH_JOIN whose left child EXCHANGE
+    // pulls Fragment 1 in via a cross-fragment link. The unified layout places
+    // Fragment 1's DATA_STREAM_SINK directly beneath that EXCHANGE; because the
+    // EXCHANGE subtree width now accounts for the peer, the sibling AGGREGATION
+    // (id=6) cannot overlap it, and the disconnected AGG(10) is placed clear.
     const fx = `Summary:
    - Profile ID: x
 MergedProfile
@@ -1987,14 +2081,20 @@ MergedProfile
     const ast = textParser(fx);
     const plan = buildPlanTree(ast);
     const pos = layoutPlan(plan);
-    // The right-hand AGGREGATION leaf under HASH_JOIN (id=6) and Fragment 1's
-    // DATA_STREAM_SINK must not overlap horizontally.
-    const otherLeaf = plan.nodes.find(n => n.name === 'AGGREGATION_OPERATOR' && n.opId === 6);
-    const sink = plan.nodes.find(n => n.name === 'DATA_STREAM_SINK_OPERATOR');
-    const leafRight = pos[otherLeaf.idx].x + NODE_W / 2;
-    const sinkLeft  = pos[sink.idx].x - NODE_W / 2;
-    assertTrue(sinkLeft >= leafRight,
-      `Fragment 1 sink (x=${pos[sink.idx].x}) overlaps root-tree LEAF (x=${pos[otherLeaf.idx].x})`);
+    const exch    = plan.nodes.find(n => n.name === 'EXCHANGE_OPERATOR');
+    const sink    = plan.nodes.find(n => n.name === 'DATA_STREAM_SINK_OPERATOR');
+    const aggLeaf = plan.nodes.find(n => n.name === 'AGGREGATION_OPERATOR' && n.opId === 6);
+    const aggDisc = plan.nodes.find(n => n.name === 'AGGREGATION_OPERATOR' && n.opId === 10);
+
+    // Peer sits directly beneath the EXCHANGE that reads it, one level down.
+    assertEqual(pos[sink.idx].x, pos[exch.idx].x);
+    assertEqual(pos[sink.idx].y - pos[exch.idx].y, NODE_H + V_GAP);
+    // EXCHANGE and its sibling AGGREGATION(id=6) under HASH_JOIN do not overlap.
+    assertTrue(Math.abs(pos[aggLeaf.idx].x - pos[exch.idx].x) >= NODE_W + H_GAP,
+      `HASH_JOIN children overlap: exch=${pos[exch.idx].x} agg6=${pos[aggLeaf.idx].x}`);
+    // The disconnected AGGREGATION(id=10) pipeline is placed clear of the root.
+    assertTrue(Math.abs(pos[aggDisc.idx].x - pos[plan.rootIdx].x) >= NODE_W,
+      `Disconnected AGG(10) overlaps root (x=${pos[plan.rootIdx].x}) at ${pos[aggDisc.idx].x}`);
   });
 });
 
@@ -2054,6 +2154,45 @@ suite('layout — real samples reach every node', () => {
       assertEqual(orphans, 0);
     });
   }
+});
+
+// The connectivity guarantee behind the fix: starting at rootIdx and following
+// only operator children + link peers must reach EVERY node. If any node is
+// unreachable, its pipeline rendered as a detached component (the original bug).
+import { childrenForLayout } from '../js/render/planTree.js';
+
+function reachableFromRoot(plan) {
+  if (plan.rootIdx === null) return new Set();
+  const seen = new Set([plan.rootIdx]);
+  const q = [plan.rootIdx];
+  while (q.length) {
+    const i = q.shift();
+    for (const k of childrenForLayout(plan, i)) {
+      if (!seen.has(k)) { seen.add(k); q.push(k); }
+    }
+  }
+  return seen;
+}
+
+suite('layout — real samples form one connected tree', () => {
+  for (const path of SAMPLE_PATHS) {
+    test(`${path} — every node reachable from root via children+links`, async () => {
+      const raw = await (await fetch(path)).text();
+      const r = runPipeline(raw);
+      const plan = buildPlanTree(r.ast);
+      const reached = reachableFromRoot(plan);
+      assertEqual(reached.size, plan.nodes.length,
+        `${plan.nodes.length - reached.size} disconnected node(s)`);
+    });
+  }
+  test('tpch_q3.txt — pipeline links connect all 9 fragment-1 pipelines', async () => {
+    const raw = await (await fetch('../samples/tpch/tpch_q3.txt')).text();
+    const r = runPipeline(raw);
+    const plan = buildPlanTree(r.ast);
+    const links = plan.nodes.filter(n => n.pipelineLink && n.pipelineLink.peerIdx !== null);
+    assertTrue(links.length >= 8, `expected >=8 pipeline links, got ${links.length}`);
+    assertEqual(reachableFromRoot(plan).size, plan.nodes.length);
+  });
 });
 
 import { renderPlanTree } from '../js/render/planTree.js';
@@ -2208,6 +2347,16 @@ suite('renderPlanTree — edges', () => {
     renderPlanTree(container, ast);
     const xfrag = container.querySelectorAll('path.edge.xfrag');
     assertEqual(xfrag.length, 1);
+  });
+  test('Within-fragment pipeline links have .pipeline class', () => {
+    const container = document.createElement('div');
+    const ast = textParser(WITHIN_FRAGMENT_FIXTURE);
+    renderPlanTree(container, ast);
+    const pipe = container.querySelectorAll('path.edge.pipeline');
+    assertEqual(pipe.length, 1);   // AGGREGATION → AGGREGATION_SINK
+    // Operator-child edges remain plain (RESULT_SINK→AGG, AGG_SINK→OLAP_SCAN).
+    const childEdges = container.querySelectorAll('path.edge:not(.xfrag):not(.pipeline)');
+    assertEqual(childEdges.length, 2);
   });
 });
 
